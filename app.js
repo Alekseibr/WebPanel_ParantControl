@@ -78,8 +78,11 @@ auth.onAuthStateChanged(async (user) => {
         const email = user.email;
         let parentName = 'Родитель';
         if (email) {
-            const name = email.split('@')[0];
-            parentName = name.charAt(0).toUpperCase() + name.slice(1);
+          if (email.toUpperCase().startsWith('B')) {
+  parentName = "Папа";
+} else {
+  parentName = "Мама";
+          }         
         }
         const header = document.querySelector('.header p');
         if (header) header.innerHTML = `Добро пожаловать, ${parentName}! 👋`;
