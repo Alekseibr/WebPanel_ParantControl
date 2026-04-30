@@ -3,6 +3,7 @@
   "short_name": "РодКонтроль",
   "description": "Управление доступом и мониторинг ребёнка",
   "start_url": "/WebPanel_ParantControl/",
+  "scope": "WebPanel_ParantControl/",
   "display": "standalone",
   "theme_color": "#667eea",
   "background_color": "#ffffff",
