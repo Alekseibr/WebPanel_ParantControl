@@ -2,7 +2,7 @@
 // For Firebase JS SDK v7.20.0 and later, measurementId is optional
 const firebaseConfig = {
   apiKey: "AIzaSyAStWFyRYy4RVSEfQ5obMJwPCOslAaBCGU",
-  authDomain: "parentalcontrol-c7f7a.firebaseapp.com",
+  authDomain: "alekseibr.github.io",
   databaseURL: "https://parentalcontrol-c7f7a-default-rtdb.europe-west1.firebasedatabase.app",
   projectId: "parentalcontrol-c7f7a",
   storageBucket: "parentalcontrol-c7f7a.firebasestorage.app",
