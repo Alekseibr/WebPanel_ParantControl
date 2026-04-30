@@ -22,7 +22,7 @@ let marker = null;
 // ========== ПРЕДУСТАНОВЛЕННЫЕ РОДИТЕЛИ ==========
 // Менять здесь — менять везде! Укажите email и пароль для родителей
 const PARENT_EMAILS = {
-    mother: "bank.86@mail.ru",  // замените на email мамы
+    mother: "vanina-katia@mail.ru",  // замените на email мамы
     father: "bank.86@mail.ru"   // замените на email папы
 };
 const DEFAULT_PASSWORD = "b25a03n86k";  // общий пароль (можно сменить позже)
