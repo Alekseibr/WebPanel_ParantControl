@@ -10,8 +10,6 @@ const firebaseConfig = {
   measurementId: "G-1Q58H5V8YT"
 };
 
-// Firebase конфигурация (замените на вашу)
-
 firebase.initializeApp(firebaseConfig);
 const auth = firebase.auth();
 const db = firebase.database();
@@ -19,53 +17,8 @@ const db = firebase.database();
 let map = null;
 let marker = null;
 
-// ========== ПРЕДУСТАНОВЛЕННЫЕ РОДИТЕЛИ ==========
-// Менять здесь — менять везде! Укажите email и пароль для родителей
-const PARENT_EMAILS = {
-    mother: "vanina-katia@mail.ru",  // замените на email мамы
-    father: "bank.86@mail.ru"   // замените на email папы
-};
-const DEFAULT_PASSWORD = "b25a03n86k";  // общий пароль (можно сменить позже)
+// ========== АУТЕНТИФИКАЦИЯ БЕЗ АВТОМАТИЧЕСКОГО СОЗДАНИЯ ==========
 
-// ========== АВТОМАТИЧЕСКОЕ СОЗДАНИЕ РОДИТЕЛЕЙ ==========
-async function createParentAccounts() {
-    try {
-        // Проверяем, созданы ли уже аккаунты родителей
-        const snapshot = await db.ref('system/parents_created').get();
-        if (snapshot.val() === true) {
-            console.log('Родительские аккаунты уже созданы');
-            return;
-        }
-        
-        // Создаём аккаунт мамы
-        try {
-            await auth.createUserWithEmailAndPassword(PARENT_EMAILS.mother, DEFAULT_PASSWORD);
-            console.log('Аккаунт мамы создан');
-        } catch (e) {
-            if (e.code !== 'auth/email-already-in-use') {
-                console.error('Ошибка создания мамы:', e);
-            }
-        }
-        
-        // Создаём аккаунт папы
-        try {
-            await auth.createUserWithEmailAndPassword(PARENT_EMAILS.father, DEFAULT_PASSWORD);
-            console.log('Аккаунт папы создан');
-        } catch (e) {
-            if (e.code !== 'auth/email-already-in-use') {
-                console.error('Ошибка создания папы:', e);
-            }
-        }
-        
-        // Отмечаем, что родители созданы
-        await db.ref('system/parents_created').set(true);
-        
-    } catch (error) {
-        console.error('Ошибка создания родительских аккаунтов:', error);
-    }
-}
-
-// ========== АУТЕНТИФИКАЦИЯ С ЗАПРЕТОМ РЕГИСТРАЦИИ ==========
 // Скрытая форма логина без возможности регистрации
 function showLoginForm() {
     const container = document.getElementById('firebaseui-auth-container');
@@ -85,7 +38,7 @@ function showLoginForm() {
             <button id="loginButton" style="width: 100%; padding: 12px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; border-radius: 8px; font-size: 16px; font-weight: bold; cursor: pointer;">Войти</button>
             <div id="loginError" style="margin-top: 15px; padding: 10px; background: #fee; color: #c33; border-radius: 8px; display: none;"></div>
             <div style="margin-top: 20px; text-align: center; font-size: 12px; color: #999;">
-                Только для родителей. Свяжитесь с администратором для получения доступа.
+                Только для родителей. Обратитесь к администратору для получения доступа.
             </div>
         </div>
     `;
@@ -111,6 +64,10 @@ function showLoginForm() {
                 errorDiv.textContent = 'Пользователь не найден. Доступ только для родителей.';
             } else if (error.code === 'auth/wrong-password') {
                 errorDiv.textContent = 'Неверный пароль';
+            } else if (error.code === 'auth/invalid-email') {
+                errorDiv.textContent = 'Неверный формат email';
+            } else if (error.code === 'auth/too-many-requests') {
+                errorDiv.textContent = 'Слишком много попыток. Попробуйте позже.';
             } else {
                 errorDiv.textContent = 'Ошибка: ' + error.message;
             }
@@ -133,8 +90,12 @@ auth.onAuthStateChanged(async (user) => {
         // Показываем, кто вошёл
         const email = user.email;
         let parentName = 'Родитель';
-        if (email === PARENT_EMAILS.mother) parentName = 'Мама';
-        if (email === PARENT_EMAILS.father) parentName = 'Папа';
+        
+        // Можно настроить приветствие по email
+        if (email) {
+            const name = email.split('@')[0];
+            parentName = name.charAt(0).toUpperCase() + name.slice(1);
+        }
         
         // Добавляем приветствие в шапку
         const header = document.querySelector('.header p');
@@ -145,8 +106,7 @@ auth.onAuthStateChanged(async (user) => {
         // Пользователь не вошёл — показываем форму логина
         document.getElementById('authContainer').style.display = 'flex';
         document.getElementById('appContainer').style.display = 'none';
-        createParentAccounts(); // Автоматически создаём родителей при первом запуске
-        showLoginForm();        // Показываем форму входа без регистрации
+        showLoginForm();
     }
 });
 
@@ -155,7 +115,7 @@ function logout() {
     location.reload(); 
 }
 
-// ========== ОСНОВНАЯ ЛОГИКА (без изменений) ==========
+// ========== ОСНОВНАЯ ЛОГИКА ПРИЛОЖЕНИЯ ==========
 function initApp() { 
     initMap(); 
     loadPermissions(); 
@@ -167,33 +127,58 @@ function initApp() {
 
 function initMap() { 
     map = L.map('map').setView([55.751244, 37.618423], 13); 
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map); 
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '© OpenStreetMap contributors'
+    }).addTo(map); 
 }
 
 async function loadPermissions() { 
-    const s = await db.ref('kiosk/permissions').get(); 
-    const perms = s.val() || []; 
-    document.querySelectorAll('#permissions input').forEach(cb => { 
-        cb.checked = perms.includes(cb.value); 
-    }); 
+    try {
+        const s = await db.ref('kiosk/permissions').get(); 
+        const perms = s.val() || []; 
+        document.querySelectorAll('#permissions input').forEach(cb => { 
+            cb.checked = perms.includes(cb.value); 
+        });
+    } catch (error) {
+        console.error('Ошибка загрузки прав:', error);
+    }
 }
 
 async function savePermissions() { 
     const allowed = []; 
     document.querySelectorAll('#permissions input:checked').forEach(cb => allowed.push(cb.value)); 
-    await db.ref('kiosk/permissions').set(allowed); 
-    const v = (await db.ref('kiosk/version').get()).val() || 0; 
-    await db.ref('kiosk/version').set(v + 1); 
-    alert('✅ Права сохранены'); 
+    try {
+        await db.ref('kiosk/permissions').set(allowed); 
+        const v = (await db.ref('kiosk/version').get()).val() || 0; 
+        await db.ref('kiosk/version').set(v + 1); 
+        alert('✅ Права сохранены'); 
+    } catch (error) {
+        console.error('Ошибка сохранения прав:', error);
+        alert('❌ Ошибка при сохранении прав');
+    }
 }
 
 async function resetPermissions() { 
-    const def = ["com.android.dialer","com.android.gallery3d","com.android.contacts","com.android.camera","com.android.settings","com.android.chrome","com.max.messenger","com.android.mms"]; 
-    await db.ref('kiosk/permissions').set(def); 
-    const v = (await db.ref('kiosk/version').get()).val() || 0; 
-    await db.ref('kiosk/version').set(v + 1); 
-    await loadPermissions(); 
-    alert('🔄 Сброшено'); 
+    const def = [
+        "com.android.dialer",
+        "com.android.gallery3d",
+        "com.android.contacts",
+        "com.android.camera",
+        "com.android.settings",
+        "com.android.chrome",
+        "com.max.messenger",
+        "com.android.mms"
+    ]; 
+    try {
+        await db.ref('kiosk/permissions').set(def); 
+        const v = (await db.ref('kiosk/version').get()).val() || 0; 
+        await db.ref('kiosk/version').set(v + 1); 
+        await loadPermissions(); 
+        alert('🔄 Права сброшены к стандартным'); 
+    } catch (error) {
+        console.error('Ошибка сброса прав:', error);
+        alert('❌ Ошибка при сбросе прав');
+    }
 }
 
 function trackLocation() { 
@@ -203,7 +188,16 @@ function trackLocation() {
             if (marker) marker.setLatLng([loc.lat, loc.lng]); 
             else marker = L.marker([loc.lat, loc.lng]).addTo(map); 
             map.setView([loc.lat, loc.lng], 15); 
-            document.getElementById('locationInfo').innerHTML = `📍 ${loc.lat.toFixed(6)}, ${loc.lng.toFixed(6)}<br>🎯 Точность: ${(loc.accuracy||50).toFixed(0)} м<br>🕐 ${new Date(loc.time).toLocaleString()}`; 
+            document.getElementById('locationInfo').innerHTML = `📍 Широта: ${loc.lat.toFixed(6)}<br>📍 Долгота: ${loc.lng.toFixed(6)}<br>🎯 Точность: ${(loc.accuracy||50).toFixed(0)} м<br>🕐 ${new Date(loc.time).toLocaleString()}`; 
+            
+            // Добавляем кружок точности
+            if (window.accuracyCircle) map.removeLayer(window.accuracyCircle);
+            window.accuracyCircle = L.circle([loc.lat, loc.lng], {
+                radius: loc.accuracy || 50,
+                color: '#007bff',
+                fillColor: '#007bff',
+                fillOpacity: 0.1
+            }).addTo(map);
         } 
     }); 
 }
@@ -231,14 +225,39 @@ function monitorOnlineStatus() {
 
 async function loadHistory(days) { 
     const cutoff = Date.now() - days * 86400000; 
-    const snap = await db.ref('kids/child_device/activity_history/all_events').orderByChild('device_time').startAt(cutoff).get(); 
-    const events = []; 
-    snap.forEach(c => events.push(c.val())); 
-    events.sort((a,b) => (b.device_time||0) - (a.device_time||0)); 
-    const cont = document.getElementById('historyList'); 
-    if (events.length === 0) { 
-        cont.innerHTML = '<div style="text-align:center; padding:40px;">Нет событий</div>'; 
-        return; 
-    } 
-    cont.innerHTML = events.map(e => `<div class="history-item"><div class="history-icon">${e.type==='app_launch'?'🚀':(e.type==='status_change'?(e.title?.includes('в сети')?'🟢':'🔴'):'📍')}</div><div class="history-content"><div class="history-title">${e.title||''}</div><div class="history-details">${e.details||''}</div></div><div class="history-time">${new Date(e.device_time).toLocaleString()}</div></div>`).join(''); 
+    try {
+        const snap = await db.ref('kids/child_device/activity_history/all_events')
+            .orderByChild('device_time')
+            .startAt(cutoff)
+            .get(); 
+        const events = []; 
+        snap.forEach(c => events.push(c.val())); 
+        events.sort((a,b) => (b.device_time||0) - (a.device_time||0)); 
+        const cont = document.getElementById('historyList'); 
+        if (events.length === 0) { 
+            cont.innerHTML = '<div style="text-align:center; padding:40px; color:#666;">Нет событий за выбранный период</div>'; 
+            return; 
+        } 
+        cont.innerHTML = events.map(e => `
+            <div class="history-item">
+                <div class="history-icon">${e.type==='app_launch'?'🚀':(e.type==='status_change'?(e.title?.includes('в сети')?'🟢':'🔴'):'📍')}</div>
+                <div class="history-content">
+                    <div class="history-title">${escapeHtml(e.title||'')}</div>
+                    <div class="history-details">${escapeHtml(e.details||'')}</div>
+                </div>
+                <div class="history-time">${new Date(e.device_time).toLocaleString()}</div>
+            </div>
+        `).join('');
+    } catch (error) {
+        console.error('Ошибка загрузки истории:', error);
+        document.getElementById('historyList').innerHTML = '<div style="text-align:center; padding:40px; color:red;">Ошибка загрузки истории</div>';
+    }
+}
+
+// Функция экранирования HTML
+function escapeHtml(text) {
+    if (!text) return '';
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
 }
