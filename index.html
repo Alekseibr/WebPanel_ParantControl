@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>Родительский контроль</title>
+    <link rel="manifest" href="manifest.json">
+    <link rel="apple-touch-icon" href="icon-192.png">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #f5f5f5; }
+        .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px; text-align: center; }
+        .container { display: grid; grid-template-columns: 350px 1fr; gap: 20px; padding: 20px; max-width: 1400px; margin: 0 auto; }
+        .sidebar, .content { background: white; border-radius: 10px; padding: 20px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        .permission-item { padding: 10px; margin: 10px 0; background: #f8f9fa; border-radius: 5px; display: flex; align-items: center; cursor: pointer; }
+        .permission-item:hover { background: #e9ecef; }
+        .permission-item input { margin-right: 10px; width: 20px; height: 20px; cursor: pointer; }
+        .permission-item label { cursor: pointer; flex: 1; }
+        .btn { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; padding: 12px 24px; border-radius: 5px; cursor: pointer; width: 100%; margin-top: 20px; font-size: 16px; }
+        .btn-danger { background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); }
+        .status { padding: 10px; margin: 10px 0; border-radius: 5px; font-size: 14px; }
+        .status-online { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .status-offline { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+        #map { height: 400px; border-radius: 8px; margin-bottom: 20px; }
+        .location-info { margin-top: 10px; padding: 10px; background: #e9ecef; border-radius: 5px; font-size: 14px; }
+        h3 { margin-bottom: 15px; color: #667eea; }
+        hr { margin: 20px 0; border-top: 1px solid #dee2e6; }
+        .history-item { padding: 12px 15px; border-bottom: 1px solid #dee2e6; display: flex; align-items: center; gap: 15px; }
+        .history-icon { font-size: 24px; width: 40px; }
+        .history-content { flex: 1; }
+        .history-title { font-weight: bold; }
+        .history-details { font-size: 12px; color: #666; }
+        .history-time { font-size: 12px; color: #999; }
+        .auth-container { display: flex; justify-content: center; align-items: center; min-height: 100vh; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }
+        .auth-card { background: white; border-radius: 20px; padding: 40px; width: 100%; max-width: 450px; text-align: center; box-shadow: 0 20px 40px rgba(0,0,0,0.2); }
+        .auth-card h2 { margin-bottom: 24px; color: #333; }
+        .app-container { display: none; }
+        @media (max-width: 768px) { .container { grid-template-columns: 1fr; } }
+    </style>
+</head>
+<body>
+
+<div id="authContainer" class="auth-container">
+    <div class="auth-card">
+        <h2>👨‍👩‍👧 Родительский контроль</h2>
+        <div id="firebaseui-auth-container"></div>
+    </div>
+</div>
+
+<div id="appContainer" class="app-container">
+    <div class="header">
+        <h1>🎮 Родительский контроль</h1>
+        <p>Управление доступом и геолокация</p>
+    </div>
+    
+    <div class="container">
+        <div class="sidebar">
+            <h3>📱 Управление доступом</h3>
+            <div id="permissions">
+                <div class="permission-item"><input type="checkbox" value="com.android.dialer" id="dialer"><label>📞 Звонилка</label></div>
+                <div class="permission-item"><input type="checkbox" value="com.android.gallery3d" id="gallery"><label>🖼️ Галерея</label></div>
+                <div class="permission-item"><input type="checkbox" value="com.android.contacts" id="contacts"><label>📇 Контакты</label></div>
+                <div class="permission-item"><input type="checkbox" value="com.android.camera" id="camera"><label>📷 Камера</label></div>
+                <div class="permission-item"><input type="checkbox" value="com.android.chrome" id="chrome"><label>🌐 Google Chrome</label></div>
+                <div class="permission-item"><input type="checkbox" value="com.max.messenger" id="max"><label>💬 Мессенджер Макс</label></div>
+                <div class="permission-item"><input type="checkbox" value="com.android.mms" id="sms"><label>💬 СМС сообщения</label></div>
+            </div>
+            <button class="btn" onclick="savePermissions()">💾 Сохранить права</button>
+            <button class="btn btn-danger" onclick="resetPermissions()" style="margin-top:10px;">🔄 Сбросить</button>
+            
+            <hr>
+            <h3>📡 Статус телефона</h3>
+            <div id="statusCard" style="background:#f8f9fa; border-radius:10px; padding:15px; text-align:center;">
+                <div id="statusIcon" style="font-size:48px;">🔄</div>
+                <div id="statusText" style="font-size:18px;">Загрузка...</div>
+                <div id="batteryText" style="font-size:12px; margin-top:8px;"></div>
+            </div>
+            
+            <hr>
+            <button class="btn btn-danger" onclick="logout()">🚪 Выйти</button>
+        </div>
+        
+        <div class="content">
+            <h3>📍 Геолокация</h3>
+            <div id="map"></div>
+            <div id="locationInfo" class="location-info">Загрузка...</div>
+            
+            <hr>
+            <h3>📜 История активности</h3>
+            <div style="display:flex; gap:10px; margin-bottom:10px;">
+                <button onclick="loadHistory(1)" style="padding:8px 16px; background:#667eea; color:white; border:none; border-radius:5px;">За сегодня</button>
+                <button onclick="loadHistory(3)" style="padding:8px 16px; background:#667eea; color:white; border:none; border-radius:5px;">За 3 дня</button>
+                <button onclick="loadHistory(7)" style="padding:8px 16px; background:#667eea; color:white; border:none; border-radius:5px;">За неделю</button>
+            </div>
+            <div id="historyList" style="max-height:300px; overflow-y:auto; border:1px solid #dee2e6; border-radius:8px;">
+                <div style="text-align:center; padding:40px;">Выберите период</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-database-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/ui/6.0.1/firebase-ui-auth.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
