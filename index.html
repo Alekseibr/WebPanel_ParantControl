@@ -36,26 +36,33 @@
         .auth-card { background: white; border-radius: 20px; padding: 40px; width: 100%; max-width: 450px; text-align: center; box-shadow: 0 20px 40px rgba(0,0,0,0.2); }
         .auth-card h2 { margin-bottom: 24px; color: #333; }
         .app-container { display: none; }
+        .toggle-switch { display: flex; align-items: center; justify-content: space-between; margin: 20px 0; }
+        .toggle-label { font-weight: bold; }
+        .toggle-button { width: 60px; height: 30px; background: #ccc; border-radius: 30px; position: relative; cursor: pointer; transition: 0.3s; }
+        .toggle-button.active { background: #28a745; }
+        .toggle-button::after { content: ""; width: 26px; height: 26px; background: white; border-radius: 50%; position: absolute; top: 2px; left: 2px; transition: 0.3s; }
+        .toggle-button.active::after { left: 32px; }
         @media (max-width: 768px) { .container { grid-template-columns: 1fr; } }
     </style>
 </head>
 <body>
-
 <div id="authContainer" class="auth-container">
     <div class="auth-card">
         <h2>👨‍👩‍👧 Родительский контроль</h2>
         <div id="firebaseui-auth-container"></div>
     </div>
 </div>
-
 <div id="appContainer" class="app-container">
     <div class="header">
         <h1>🎮 Родительский контроль</h1>
         <p>Управление доступом и геолокация</p>
     </div>
-    
     <div class="container">
         <div class="sidebar">
+            <div class="toggle-switch">
+                <span class="toggle-label">🔒 Киоск-режим</span>
+                <div id="kioskToggle" class="toggle-button" onclick="toggleKioskMode()"></div>
+            </div>
             <h3>📱 Управление доступом</h3>
             <div id="permissions">
                 <div class="permission-item"><input type="checkbox" value="com.android.dialer" id="dialer"><label>📞 Звонилка</label></div>
@@ -68,7 +75,6 @@
             </div>
             <button class="btn" onclick="savePermissions()">💾 Сохранить права</button>
             <button class="btn btn-danger" onclick="resetPermissions()" style="margin-top:10px;">🔄 Сбросить</button>
-            
             <hr>
             <h3>📡 Статус телефона</h3>
             <div id="statusCard" style="background:#f8f9fa; border-radius:10px; padding:15px; text-align:center;">
@@ -76,16 +82,13 @@
                 <div id="statusText" style="font-size:18px;">Загрузка...</div>
                 <div id="batteryText" style="font-size:12px; margin-top:8px;"></div>
             </div>
-            
             <hr>
             <button class="btn btn-danger" onclick="logout()">🚪 Выйти</button>
         </div>
-        
         <div class="content">
             <h3>📍 Геолокация</h3>
             <div id="map"></div>
             <div id="locationInfo" class="location-info">Загрузка...</div>
-            
             <hr>
             <h3>📜 История активности</h3>
             <div style="display:flex; gap:10px; margin-bottom:10px;">
@@ -99,11 +102,11 @@
         </div>
     </div>
 </div>
-
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-database-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/ui/6.0.1/firebase-ui-auth.js"></script>
 <script src="app.js"></script>
 </body>
 </html>
