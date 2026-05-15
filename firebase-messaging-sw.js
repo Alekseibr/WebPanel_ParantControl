@@ -2,13 +2,14 @@ importScripts('https://www.gstatic.com/firebasejs/10.7.0/firebase-app-compat.js'
 importScripts('https://www.gstatic.com/firebasejs/10.7.0/firebase-messaging-compat.js');
 
 const firebaseConfig = {
-    apiKey: "YOUR_API_KEY",
-    authDomain: "YOUR_AUTH_DOMAIN",
-    databaseURL: "YOUR_DATABASE_URL",
-    projectId: "YOUR_PROJECT_ID",
-    storageBucket: "YOUR_STORAGE_BUCKET",
-    messagingSenderId: "YOUR_SENDER_ID",
-    appId: "YOUR_APP_ID"
+  apiKey: "AIzaSyAStWFyRYy4RVSEfQ5obMJwPCOslAaBCGU",
+  authDomain: "parentalcontrol-c7f7a.firebaseapp.com",
+  databaseURL: "https://parentalcontrol-c7f7a-default-rtdb.europe-west1.firebasedatabase.app",
+  projectId: "parentalcontrol-c7f7a",
+  storageBucket: "parentalcontrol-c7f7a.firebasestorage.app",
+  messagingSenderId: "773827816415",
+  appId: "1:773827816415:web:9b4a2c9ed3e297706a326a",
+  measurementId: "G-1Q58H5V8YT"
 };
 
 firebase.initializeApp(firebaseConfig);
