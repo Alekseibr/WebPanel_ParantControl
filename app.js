@@ -20,7 +20,6 @@ let accuracyCircle = null;
 let currentUser = null;
 let currentBlockingState = false;
 let appsList = [];
-let notificationList = [];
 let notificationTimeout = null;
 
 function escapeHtml(text) {
@@ -64,20 +63,7 @@ function showNotification(title, body) {
     }, 5000);
 }
 
-// Аутентификация
-const ui = new firebaseui.auth.AuthUI(auth);
-const uiConfig = {
-    signInOptions: [firebase.auth.EmailAuthProvider.PROVIDER_ID],
-    callbacks: {
-        signInSuccessWithAuthResult: () => {
-            document.getElementById('authContainer').style.display = 'none';
-            document.getElementById('appContainer').style.display = 'block';
-            initApp();
-            return false;
-        }
-    }
-};
-
+// Аутентификация (только вход, без регистрации)
 auth.onAuthStateChanged((user) => {
     if (user) {
         currentUser = user;
@@ -97,7 +83,52 @@ auth.onAuthStateChanged((user) => {
     } else {
         document.getElementById('authContainer').style.display = 'flex';
         document.getElementById('appContainer').style.display = 'none';
-        ui.start('#firebaseui-auth-container', uiConfig);
+    }
+});
+
+// Обработчик входа
+document.addEventListener('DOMContentLoaded', () => {
+    const loginBtn = document.getElementById('loginButton');
+    const loginEmail = document.getElementById('loginEmail');
+    const loginPassword = document.getElementById('loginPassword');
+    const loginError = document.getElementById('loginError');
+    
+    if (loginBtn) {
+        loginBtn.addEventListener('click', async () => {
+            const email = loginEmail.value.trim();
+            const password = loginPassword.value.trim();
+            
+            if (!email || !password) {
+                loginError.textContent = 'Введите email и пароль';
+                loginError.style.display = 'block';
+                return;
+            }
+            
+            loginError.style.display = 'none';
+            loginBtn.disabled = true;
+            loginBtn.textContent = 'Вход...';
+            
+            try {
+                await auth.signInWithEmailAndPassword(email, password);
+            } catch (error) {
+                let errorMessage = 'Ошибка входа';
+                if (error.code === 'auth/user-not-found') {
+                    errorMessage = 'Пользователь не найден';
+                } else if (error.code === 'auth/wrong-password') {
+                    errorMessage = 'Неверный пароль';
+                } else if (error.code === 'auth/invalid-email') {
+                    errorMessage = 'Неверный формат email';
+                }
+                loginError.textContent = errorMessage;
+                loginError.style.display = 'block';
+                loginBtn.disabled = false;
+                loginBtn.textContent = 'Войти';
+            }
+        });
+        
+        loginPassword.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') loginBtn.click();
+        });
     }
 });
 
@@ -351,7 +382,7 @@ async function clearHistory() {
 // Статистика
 async function loadStats() {
     const tbody = document.getElementById('statsBody');
-    tbody.innerHTML = '<tr><td colspan="2" style="text-align: center;">Загрузка...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="2" style="text-align: center;">Загрузка......</td></tr>';
     
     try {
         const snapshot = await db.ref('device/usage_stats').get();
@@ -366,7 +397,7 @@ async function loadStats() {
         entries.sort((a, b) => b[1] - a[1]);
         tbody.innerHTML = entries.map(([pkg, time]) => `
             <tr>
-                <td>${escapeHtml(pkg)}</td>
+                <td style="word-break: break-all;">${escapeHtml(pkg)}</td>
                 <td>${formatDuration(Math.round(time / 1000))}</td>
             </tr>
         `).join('');
@@ -417,9 +448,16 @@ function setupRealtimeListeners() {
 }
 
 function setupButtons() {
-    document.getElementById('toggleBlocking').onclick = () => toggleBlocking();
-    document.getElementById('syncBtn').onclick = () => sync();
-    document.getElementById('loadAppsBtn').onclick = () => loadApps();
-    document.getElementById('blockSelectedBtn').onclick = () => blockSelectedApps();
-    document.getElementById('clearHistoryBtn').onclick = () => clearHistory();
+    const toggleBlocking = document.getElementById('toggleBlocking');
+    const syncBtn = document.getElementById('syncBtn');
+    const loadAppsBtn = document.getElementById('loadAppsBtn');
+    const blockSelectedBtn = document.getElementById('blockSelectedBtn');
+    const clearHistoryBtn = document.getElementById('clearHistoryBtn');
+    
+    if (toggleBlocking) toggleBlocking.onclick = () => toggleBlocking();
+    if (syncBtn) syncBtn.onclick = () => sync();
+    if (loadAppsBtn) loadAppsBtn.onclick = () => loadApps();
+    if (blockSelectedBtn) blockSelectedBtn.onclick = () => blockSelectedApps();
+    if (clearHistoryBtn) clearHistoryBtn.onclick = () => clearHistory();
 }
+
