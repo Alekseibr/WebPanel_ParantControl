@@ -21,7 +21,7 @@ let currentUser = null;
 let currentBlockingState = false;
 let appsList = [];
 let notificationTimeout = null;
-let currentSelectedApps = [];
+let suspendedAppsList = []; // Список заблокированных приложений
 
 function escapeHtml(text) {
     if (!text) return '';
@@ -64,7 +64,7 @@ function showNotification(title, body) {
     }, 5000);
 }
 
-// Аутентификация (только вход, без регистрации)
+// Аутентификация
 auth.onAuthStateChanged((user) => {
     if (user) {
         currentUser = user;
@@ -160,6 +160,7 @@ function initApp() {
     loadApps();
     loadHistory(1);
     loadStats();
+    loadSuspendedApps(); // Загружаем список заблокированных приложений
     setupRealtimeListeners();
     setupButtons();
 }
@@ -169,6 +170,13 @@ function initMap() {
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         attribution: '© OpenStreetMap contributors'
     }).addTo(map);
+}
+
+// Загрузка списка заблокированных приложений
+async function loadSuspendedApps() {
+    const snapshot = await db.ref('device/suspended_apps').get();
+    suspendedAppsList = snapshot.val() || [];
+    updateToggleButtonState(); // Обновляем состояние кнопки
 }
 
 // Управление блокировкой
@@ -200,7 +208,7 @@ async function toggleBlocking() {
     }
 }
 
-// Статус устройства (исправлен: один круг)
+// Статус устройства
 async function loadDeviceStatus() {
     const snapshot = await db.ref('device/status').get();
     const data = snapshot.val() || {};
@@ -266,29 +274,31 @@ async function loadApps() {
         const snapshot = await db.ref('device/apps_list').get();
         const allApps = snapshot.val() || [];
         
-        // Фильтруем: показываем ВСЕ приложения, но системные помечаем
+        // Обновляем список заблокированных
+        await loadSuspendedApps();
+        
         const userApps = allApps.filter(a => !a.isSystem);
         const systemApps = allApps.filter(a => a.isSystem);
-        
-        // Получаем список заблокированных приложений
-        const blockedSnapshot = await db.ref('device/suspended_apps').get();
-        const blockedPackages = blockedSnapshot.val() || [];
         
         let html = '';
         if (userApps.length > 0) {
             html += '<div class="group-title">📱 Пользовательские приложения</div>';
-            html += renderAppGroup(userApps, blockedPackages);
+            html += renderAppGroup(userApps);
         }
         if (systemApps.length > 0) {
             html += '<div class="group-title">⚙️ Системные приложения</div>';
-            html += renderAppGroup(systemApps, blockedPackages);
+            html += renderAppGroup(systemApps);
         }
         if (allApps.length === 0) {
             html = '<div style="text-align: center; padding: 20px; color: #666;">Нет приложений</div>';
         }
         container.innerHTML = html;
         
-        // Сохраняем текущий список приложений для кнопки переключения
+        // Добавляем обработчики для обновления состояния кнопки при выборе
+        document.querySelectorAll('#appsContainer input').forEach(cb => {
+            cb.addEventListener('change', () => updateToggleButtonState());
+        });
+        
         window.allAppsList = allApps;
         
     } catch (error) {
@@ -297,16 +307,16 @@ async function loadApps() {
     }
 }
 
-function renderAppGroup(apps, blockedPackages) {
+function renderAppGroup(apps) {
     return apps.map(app => {
-        const isBlocked = blockedPackages.includes(app.packageName);
+        const isBlocked = suspendedAppsList.includes(app.packageName);
         return `
-            <div class="app-item ${app.isSystem ? 'system' : ''}">
+            <div class="app-item ${app.isSystem ? 'system' : ''}" data-package="${app.packageName}">
                 <input type="checkbox" value="${escapeHtml(app.packageName)}" id="app_${app.packageName.replace(/\./g, '_')}">
                 <label for="app_${app.packageName.replace(/\./g, '_')}">
                     <div class="app-name">
                         ${escapeHtml(app.name)}
-                        ${isBlocked ? '<span style="color: red; font-size: 11px;"> (заблокировано)</span>' : ''}
+                        ${isBlocked ? ' <span style="color: #dc3545; font-size: 11px;">(заблокировано)</span>' : ''}
                     </div>
                     <div class="app-package">${escapeHtml(app.packageName)}</div>
                 </label>
@@ -315,8 +325,40 @@ function renderAppGroup(apps, blockedPackages) {
     }).join('');
 }
 
+// Обновление состояния кнопки (Заблокировать / Разблокировать)
+function updateToggleButtonState() {
+    const toggleBtn = document.getElementById('toggleBlockSelectedBtn');
+    if (!toggleBtn) return;
+    
+    const selected = [];
+    document.querySelectorAll('#appsContainer input:checked').forEach(cb => {
+        selected.push(cb.value);
+    });
+    
+    if (selected.length === 0) {
+        toggleBtn.textContent = '🔒 Выберите приложения';
+        toggleBtn.style.background = '#ccc';
+        toggleBtn.disabled = true;
+        return;
+    }
+    
+    toggleBtn.disabled = false;
+    
+    // Проверяем, все ли выбранные приложения уже заблокированы
+    const allSelectedBlocked = selected.every(pkg => suspendedAppsList.includes(pkg));
+    
+    if (allSelectedBlocked) {
+        toggleBtn.textContent = '🔓 Разблокировать выбранные';
+        toggleBtn.style.background = '#28a745';
+    } else {
+        toggleBtn.textContent = '🔒 Заблокировать выбранные';
+        toggleBtn.style.background = '#dc3545';
+    }
+}
+
 // Одна кнопка с переключением
 async function toggleBlockSelected() {
+    const toggleBtn = document.getElementById('toggleBlockSelectedBtn');
     const selected = [];
     document.querySelectorAll('#appsContainer input:checked').forEach(cb => {
         selected.push(cb.value);
@@ -328,23 +370,32 @@ async function toggleBlockSelected() {
     }
     
     // Проверяем, все ли выбранные приложения уже заблокированы
-    const blockedSnapshot = await db.ref('device/suspended_apps').get();
-    const blockedPackages = blockedSnapshot.val() || [];
-    const allSelectedBlocked = selected.every(pkg => blockedPackages.includes(pkg));
+    const allSelectedBlocked = selected.every(pkg => suspendedAppsList.includes(pkg));
     
     if (allSelectedBlocked) {
-        // Разблокировать: отправляем пустой массив для этих приложений
-        await db.ref('commands/unblock_apps').set(selected);
-        showNotification('Успешно', `Разблокировано ${selected.length} приложений`);
+        // Разблокировать
+        try {
+            await db.ref('commands/unblock_apps').set(selected);
+            showNotification('Успешно', `Разблокировано ${selected.length} приложений`);
+            // Обновляем список
+            setTimeout(() => loadApps(), 1000);
+        } catch (error) {
+            console.error('Ошибка:', error);
+            showNotification('Ошибка', 'Не удалось разблокировать');
+        }
     } else {
-        // Заблокировать: заменяем точки на подчёркивания
+        // Заблокировать
         const sanitized = selected.map(pkg => pkg.replace(/\./g, '_'));
-        await db.ref('commands/block_apps').set(sanitized);
-        showNotification('Успешно', `Заблокировано ${selected.length} приложений`);
+        try {
+            await db.ref('commands/block_apps').set(sanitized);
+            showNotification('Успешно', `Заблокировано ${selected.length} приложений`);
+            // Обновляем список
+            setTimeout(() => loadApps(), 1000);
+        } catch (error) {
+            console.error('Ошибка:', error);
+            showNotification('Ошибка', 'Не удалось заблокировать');
+        }
     }
-    
-    // Обновляем список через 1 секунду
-    setTimeout(() => loadApps(), 1000);
 }
 
 // История
@@ -413,10 +464,9 @@ async function clearHistory() {
 // Статистика (только пользовательские приложения)
 async function loadStats() {
     const tbody = document.getElementById('statsBody');
-    tbody.innerHTML = '<tr><td colspan="2" style="text-align: center;">Загрузка...</td></tr>';
+    tbody.innerHTML = '<td><td colspan="2" style="text-align: center;">Загрузка...</td></tr>';
     
     try {
-        // Получаем список приложений, чтобы отфильтровать системные
         const appsSnapshot = await db.ref('device/apps_list').get();
         const allApps = appsSnapshot.val() || [];
         const userAppPackages = allApps.filter(a => !a.isSystem).map(a => a.packageName);
@@ -424,14 +474,12 @@ async function loadStats() {
         const snapshot = await db.ref('device/usage_stats').get();
         let stats = snapshot.val() || {};
         
-        // Преобразуем ключи обратно из "com_android_chrome" в "com.android.chrome"
         const restoredStats = {};
         Object.keys(stats).forEach(key => {
             const originalKey = key.replace(/_/g, '.');
             restoredStats[originalKey] = stats[key];
         });
         
-        // Фильтруем: оставляем только пользовательские приложения
         const userStats = {};
         for (const [pkg, time] of Object.entries(restoredStats)) {
             if (userAppPackages.includes(pkg)) {
@@ -487,7 +535,10 @@ async function sync() {
 // Real-time слушатели
 function setupRealtimeListeners() {
     db.ref('device/status').on('value', () => loadDeviceStatus());
-    db.ref('device/suspended_apps').on('value', () => loadApps());
+    db.ref('device/suspended_apps').on('value', () => {
+        loadSuspendedApps();
+        loadApps();
+    });
     db.ref('commands/blocking_enabled').on('value', (snap) => {
         currentBlockingState = snap.val() === true;
         updateToggleButton();
