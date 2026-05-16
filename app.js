@@ -21,6 +21,7 @@ let currentUser = null;
 let currentBlockingState = false;
 let appsList = [];
 let notificationTimeout = null;
+let currentSelectedApps = [];
 
 function escapeHtml(text) {
     if (!text) return '';
@@ -199,7 +200,7 @@ async function toggleBlocking() {
     }
 }
 
-// Статус устройства
+// Статус устройства (исправлен: один круг)
 async function loadDeviceStatus() {
     const snapshot = await db.ref('device/status').get();
     const data = snapshot.val() || {};
@@ -211,10 +212,10 @@ async function loadDeviceStatus() {
     
     if (data.status === 'online') {
         statusDiv.className = 'status status-online';
-        statusText.innerHTML = '<span class="status-badge online"></span> В сети';
+        statusDiv.innerHTML = '<span class="status-badge online"></span> В сети';
     } else {
         statusDiv.className = 'status status-offline';
-        statusText.innerHTML = '<span class="status-badge offline"></span> Не в сети';
+        statusDiv.innerHTML = '<span class="status-badge offline"></span> Не в сети';
     }
     
     batteryText.textContent = data.battery ? `${data.battery}%` : '-';
@@ -263,63 +264,87 @@ async function loadApps() {
         await new Promise(resolve => setTimeout(resolve, 3000));
         
         const snapshot = await db.ref('device/apps_list').get();
-        appsList = snapshot.val() || [];
+        const allApps = snapshot.val() || [];
         
-        const systemApps = appsList.filter(a => a.isSystem);
-        const userApps = appsList.filter(a => !a.isSystem);
+        // Фильтруем: показываем ВСЕ приложения, но системные помечаем
+        const userApps = allApps.filter(a => !a.isSystem);
+        const systemApps = allApps.filter(a => a.isSystem);
+        
+        // Получаем список заблокированных приложений
+        const blockedSnapshot = await db.ref('device/suspended_apps').get();
+        const blockedPackages = blockedSnapshot.val() || [];
         
         let html = '';
         if (userApps.length > 0) {
             html += '<div class="group-title">📱 Пользовательские приложения</div>';
-            html += renderAppGroup(userApps);
+            html += renderAppGroup(userApps, blockedPackages);
         }
         if (systemApps.length > 0) {
             html += '<div class="group-title">⚙️ Системные приложения</div>';
-            html += renderAppGroup(systemApps);
+            html += renderAppGroup(systemApps, blockedPackages);
         }
-        if (appsList.length === 0) {
+        if (allApps.length === 0) {
             html = '<div style="text-align: center; padding: 20px; color: #666;">Нет приложений</div>';
         }
         container.innerHTML = html;
+        
+        // Сохраняем текущий список приложений для кнопки переключения
+        window.allAppsList = allApps;
+        
     } catch (error) {
         console.error('Ошибка загрузки приложений:', error);
         container.innerHTML = '<div style="text-align: center; padding: 20px; color: red;">Ошибка загрузки</div>';
     }
 }
 
-function renderAppGroup(apps) {
-    return apps.map(app => `
-        <div class="app-item ${app.isSystem ? 'system' : ''}">
-            <input type="checkbox" value="${escapeHtml(app.packageName)}" id="app_${app.packageName.replace(/\./g, '_')}">
-            <label for="app_${app.packageName.replace(/\./g, '_')}">
-                <div class="app-name">${escapeHtml(app.name)}</div>
-                <div class="app-package">${escapeHtml(app.packageName)}</div>
-            </label>
-        </div>
-    `).join('');
+function renderAppGroup(apps, blockedPackages) {
+    return apps.map(app => {
+        const isBlocked = blockedPackages.includes(app.packageName);
+        return `
+            <div class="app-item ${app.isSystem ? 'system' : ''}">
+                <input type="checkbox" value="${escapeHtml(app.packageName)}" id="app_${app.packageName.replace(/\./g, '_')}">
+                <label for="app_${app.packageName.replace(/\./g, '_')}">
+                    <div class="app-name">
+                        ${escapeHtml(app.name)}
+                        ${isBlocked ? '<span style="color: red; font-size: 11px;"> (заблокировано)</span>' : ''}
+                    </div>
+                    <div class="app-package">${escapeHtml(app.packageName)}</div>
+                </label>
+            </div>
+        `;
+    }).join('');
 }
 
-async function blockSelectedApps() {
+// Одна кнопка с переключением
+async function toggleBlockSelected() {
     const selected = [];
     document.querySelectorAll('#appsContainer input:checked').forEach(cb => {
         selected.push(cb.value);
     });
     
     if (selected.length === 0) {
-        showNotification('Предупреждение', 'Выберите приложения для блокировки');
+        showNotification('Предупреждение', 'Выберите приложения');
         return;
     }
     
-    // Заменяем точки на подчёркивания для безопасности Firebase
-    const sanitized = selected.map(pkg => pkg.replace(/\./g, '_'));
+    // Проверяем, все ли выбранные приложения уже заблокированы
+    const blockedSnapshot = await db.ref('device/suspended_apps').get();
+    const blockedPackages = blockedSnapshot.val() || [];
+    const allSelectedBlocked = selected.every(pkg => blockedPackages.includes(pkg));
     
-    try {
+    if (allSelectedBlocked) {
+        // Разблокировать: отправляем пустой массив для этих приложений
+        await db.ref('commands/unblock_apps').set(selected);
+        showNotification('Успешно', `Разблокировано ${selected.length} приложений`);
+    } else {
+        // Заблокировать: заменяем точки на подчёркивания
+        const sanitized = selected.map(pkg => pkg.replace(/\./g, '_'));
         await db.ref('commands/block_apps').set(sanitized);
         showNotification('Успешно', `Заблокировано ${selected.length} приложений`);
-    } catch (error) {
-        console.error('Ошибка:', error);
-        showNotification('Ошибка', 'Не удалось заблокировать');
     }
+    
+    // Обновляем список через 1 секунду
+    setTimeout(() => loadApps(), 1000);
 }
 
 // История
@@ -330,12 +355,15 @@ async function loadHistory(days) {
     
     try {
         const snapshot = await db.ref('kids/child_device/activity_history/all_events')
-            .orderByChild('device_time')
-            .startAt(cutoff)
-            .get();
+            .once('value');
         
         const events = [];
-        snapshot.forEach(child => events.push({ id: child.key, ...child.val() }));
+        snapshot.forEach(child => {
+            const val = child.val();
+            if (val.device_time && val.device_time >= cutoff) {
+                events.push({ id: child.key, ...val });
+            }
+        });
         events.sort((a, b) => (b.device_time || 0) - (a.device_time || 0));
         
         if (events.length === 0) {
@@ -382,24 +410,39 @@ async function clearHistory() {
     }
 }
 
-// Статистика
+// Статистика (только пользовательские приложения)
 async function loadStats() {
     const tbody = document.getElementById('statsBody');
     tbody.innerHTML = '<tr><td colspan="2" style="text-align: center;">Загрузка...</td></tr>';
     
     try {
+        // Получаем список приложений, чтобы отфильтровать системные
+        const appsSnapshot = await db.ref('device/apps_list').get();
+        const allApps = appsSnapshot.val() || [];
+        const userAppPackages = allApps.filter(a => !a.isSystem).map(a => a.packageName);
+        
         const snapshot = await db.ref('device/usage_stats').get();
         let stats = snapshot.val() || {};
+        
         // Преобразуем ключи обратно из "com_android_chrome" в "com.android.chrome"
         const restoredStats = {};
         Object.keys(stats).forEach(key => {
             const originalKey = key.replace(/_/g, '.');
             restoredStats[originalKey] = stats[key];
         });
-        const entries = Object.entries(restoredStats);
+        
+        // Фильтруем: оставляем только пользовательские приложения
+        const userStats = {};
+        for (const [pkg, time] of Object.entries(restoredStats)) {
+            if (userAppPackages.includes(pkg)) {
+                userStats[pkg] = time;
+            }
+        }
+        
+        const entries = Object.entries(userStats);
         
         if (entries.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="2" style="text-align: center;">Нет данных</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="2" style="text-align: center;">Нет данных (только пользовательские приложения)</td></tr>';
             return;
         }
         
@@ -444,6 +487,7 @@ async function sync() {
 // Real-time слушатели
 function setupRealtimeListeners() {
     db.ref('device/status').on('value', () => loadDeviceStatus());
+    db.ref('device/suspended_apps').on('value', () => loadApps());
     db.ref('commands/blocking_enabled').on('value', (snap) => {
         currentBlockingState = snap.val() === true;
         updateToggleButton();
@@ -460,12 +504,12 @@ function setupButtons() {
     const toggleBlockingBtn = document.getElementById('toggleBlocking');
     const syncBtn = document.getElementById('syncBtn');
     const loadAppsBtn = document.getElementById('loadAppsBtn');
-    const blockSelectedBtn = document.getElementById('blockSelectedBtn');
+    const toggleBlockSelectedBtn = document.getElementById('toggleBlockSelectedBtn');
     const clearHistoryBtn = document.getElementById('clearHistoryBtn');
     
     if (toggleBlockingBtn) toggleBlockingBtn.onclick = () => toggleBlocking();
     if (syncBtn) syncBtn.onclick = () => sync();
     if (loadAppsBtn) loadAppsBtn.onclick = () => loadApps();
-    if (blockSelectedBtn) blockSelectedBtn.onclick = () => blockSelectedApps();
+    if (toggleBlockSelectedBtn) toggleBlockSelectedBtn.onclick = () => toggleBlockSelected();
     if (clearHistoryBtn) clearHistoryBtn.onclick = () => clearHistory();
 }
