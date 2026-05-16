@@ -382,7 +382,7 @@ async function clearHistory() {
 // Статистика
 async function loadStats() {
     const tbody = document.getElementById('statsBody');
-    tbody.innerHTML = '<tr><td colspan="2" style="text-align: center;">Загрузка......</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="2" style="text-align: center;">Загрузка...</td></table>';
     
     try {
         const snapshot = await db.ref('device/usage_stats').get();
@@ -448,16 +448,15 @@ function setupRealtimeListeners() {
 }
 
 function setupButtons() {
-    const toggleBlocking = document.getElementById('toggleBlocking');
+    const toggleBlockingBtn = document.getElementById('toggleBlocking');
     const syncBtn = document.getElementById('syncBtn');
     const loadAppsBtn = document.getElementById('loadAppsBtn');
     const blockSelectedBtn = document.getElementById('blockSelectedBtn');
     const clearHistoryBtn = document.getElementById('clearHistoryBtn');
     
-    if (toggleBlocking) toggleBlocking.onclick = () => toggleBlocking();
+    if (toggleBlockingBtn) toggleBlockingBtn.onclick = () => toggleBlocking();
     if (syncBtn) syncBtn.onclick = () => sync();
     if (loadAppsBtn) loadAppsBtn.onclick = () => loadApps();
     if (blockSelectedBtn) blockSelectedBtn.onclick = () => blockSelectedApps();
     if (clearHistoryBtn) clearHistoryBtn.onclick = () => clearHistory();
 }
-
