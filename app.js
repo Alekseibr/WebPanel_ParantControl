@@ -310,8 +310,11 @@ async function blockSelectedApps() {
         return;
     }
     
+    // Заменяем точки на подчёркивания для безопасности Firebase
+    const sanitized = selected.map(pkg => pkg.replace(/\./g, '_'));
+    
     try {
-        await db.ref('commands/block_apps').set(selected);
+        await db.ref('commands/block_apps').set(sanitized);
         showNotification('Успешно', `Заблокировано ${selected.length} приложений`);
     } catch (error) {
         console.error('Ошибка:', error);
@@ -382,12 +385,18 @@ async function clearHistory() {
 // Статистика
 async function loadStats() {
     const tbody = document.getElementById('statsBody');
-    tbody.innerHTML = '<tr><td colspan="2" style="text-align: center;">Загрузка...</td></table>';
+    tbody.innerHTML = '<tr><td colspan="2" style="text-align: center;">Загрузка...</td></tr>';
     
     try {
         const snapshot = await db.ref('device/usage_stats').get();
-        const stats = snapshot.val() || {};
-        const entries = Object.entries(stats);
+        let stats = snapshot.val() || {};
+        // Преобразуем ключи обратно из "com_android_chrome" в "com.android.chrome"
+        const restoredStats = {};
+        Object.keys(stats).forEach(key => {
+            const originalKey = key.replace(/_/g, '.');
+            restoredStats[originalKey] = stats[key];
+        });
+        const entries = Object.entries(restoredStats);
         
         if (entries.length === 0) {
             tbody.innerHTML = '<tr><td colspan="2" style="text-align: center;">Нет данных</td></tr>';
