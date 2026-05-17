@@ -213,12 +213,15 @@ async function loadDeviceStatus() {
     const snapshot = await db.ref('device/status').get();
     const data = snapshot.val() || {};
     
+    const now = Date.now();
+    const lastSeen = data.lastSeen || 0;
+    const isRecent = (now - lastSeen) < 300000; // 5 минут
+    
     const statusDiv = document.getElementById('deviceStatusCard');
-    const statusText = document.getElementById('deviceStatusText');
     const batteryText = document.getElementById('batteryText');
     const lastSeenText = document.getElementById('lastSeenText');
     
-    if (data.status === 'online') {
+    if (isRecent && data.status === 'online') {
         statusDiv.className = 'status status-online';
         statusDiv.innerHTML = '<span class="status-badge online"></span> В сети';
     } else {
