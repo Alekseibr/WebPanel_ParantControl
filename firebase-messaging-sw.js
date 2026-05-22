@@ -14,6 +14,7 @@ firebase.initializeApp({
 
 const messaging = firebase.messaging();
 
+// Обработка фоновых уведомлений
 messaging.onBackgroundMessage((payload) => {
     const notificationTitle = payload.notification?.title || 'Родительский контроль';
     const notificationOptions = {
@@ -22,4 +23,10 @@ messaging.onBackgroundMessage((payload) => {
         badge: '/icon-192.png'
     };
     self.registration.showNotification(notificationTitle, notificationOptions);
+});
+
+// Обработка push-событий (критически важно!)
+self.addEventListener('push', function(event) {
+    console.log('Push event received:', event);
+    // Firebase обработает самостоятельно, но обработчик нужен для регистрации
 });
