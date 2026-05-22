@@ -23,6 +23,10 @@ let appsList = [];
 let notificationTimeout = null;
 let suspendedAppsList = []; // Список заблокированных приложений
 
+// FCM переменные
+let messaging = null;
+let fcmToken = null;
+
 function escapeHtml(text) {
     if (!text) return '';
     const div = document.createElement('div');
@@ -64,8 +68,94 @@ function showNotification(title, body) {
     }, 5000);
 }
 
+// ========== FCM НАСТРОЙКА ==========
+async function initFCM() {
+    try {
+        if (!('Notification' in window)) {
+            console.log('Браузер не поддерживает уведомления');
+            return;
+        }
+        
+        const permission = await Notification.requestPermission();
+        if (permission !== 'granted') {
+            console.log('Разрешение на уведомления не получено');
+            return;
+        }
+        
+        messaging = firebase.messaging();
+        
+        // VAPID ключ (скопируйте из настроек Firebase Cloud Messaging)
+        const vapidKey = 'ВАШ_VAPID_КЛЮЧ';
+        
+        fcmToken = await messaging.getToken({ vapidKey: vapidKey });
+        console.log('FCM Token получен:', fcmToken);
+        
+        // Сохраняем токен в Firebase
+        await db.ref('fcm_tokens').push().set({
+            token: fcmToken,
+            userId: currentUser?.uid,
+            timestamp: Date.now()
+        });
+        
+        messaging.onMessage((payload) => {
+            console.log('Получено FCM уведомление:', payload);
+            showNotification(
+                payload.notification?.title || 'Родительский контроль',
+                payload.notification?.body || 'Команда получена'
+            );
+        });
+        
+    } catch (error) {
+        console.error('Ошибка инициализации FCM:', error);
+    }
+}
+
+// ========== ФУНКЦИЯ ОТПРАВКИ FCM УВЕДОМЛЕНИЯ ==========
+async function sendFCMNotification(title, body, data = {}) {
+    if (!fcmToken) {
+        console.log('FCM токен не получен, уведомление не отправлено');
+        return;
+    }
+    
+    try {
+        const response = await fetch('https://fcm.googleapis.com/fcm/send', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': 'key=ВАШ_SERVER_KEY'
+            },
+            body: JSON.stringify({
+                to: fcmToken,
+                notification: {
+                    title: title,
+                    body: body,
+                    sound: 'default'
+                },
+                data: {
+                    type: data.type || 'command',
+                    timestamp: Date.now().toString(),
+                    ...data
+                },
+                android: {
+                    priority: 'high'
+                },
+                apns: {
+                    headers: {
+                        'apns-priority': '10'
+                    }
+                }
+            })
+        });
+        
+        const result = await response.json();
+        console.log('FCM отправлено:', result);
+    } catch (error) {
+        console.error('Ошибка отправки FCM:', error);
+    }
+}
+
 // Аутентификация
-auth.onAuthStateChanged((user) => {
+auth.onAuthStateChanged(async (user) => {
     if (user) {
         currentUser = user;
         document.getElementById('authContainer').style.display = 'none';
@@ -78,6 +168,9 @@ auth.onAuthStateChanged((user) => {
             parentName = name.charAt(0).toUpperCase() + name.slice(1);
         }
         document.getElementById('welcomeMessage').innerHTML = `Добро пожаловать, ${parentName}! 👋`;
+        
+        // Инициализируем FCM после входа
+        await initFCM();
         
         initApp();
         addLogoutButton();
@@ -184,6 +277,16 @@ async function loadBlockingState() {
     const snapshot = await db.ref('commands/blocking_enabled').get();
     currentBlockingState = snapshot.val() === true;
     updateToggleButton();
+    
+    // Обновляем статус тумблера в веб-панели
+    const toggle = document.getElementById('toggleBlocking');
+    if (toggle) {
+        if (currentBlockingState) {
+            toggle.classList.add('active');
+        } else {
+            toggle.classList.remove('active');
+        }
+    }
 }
 
 function updateToggleButton() {
@@ -202,6 +305,13 @@ async function toggleBlocking() {
         currentBlockingState = newState;
         updateToggleButton();
         showNotification('Блокировка', newState ? 'Включена' : 'Выключена');
+        
+        // Отправляем FCM уведомление
+        await sendFCMNotification(
+            '🔒 Режим блокировки',
+            newState ? 'Блокировка активирована' : 'Блокировка деактивирована',
+            { type: 'blocking_toggle', state: newState }
+        );
     } catch (error) {
         console.error('Ошибка:', error);
         showNotification('Ошибка', 'Не удалось изменить состояние');
@@ -380,7 +490,14 @@ async function toggleBlockSelected() {
         try {
             await db.ref('commands/unblock_apps').set(selected);
             showNotification('Успешно', `Разблокировано ${selected.length} приложений`);
-            // Обновляем список
+            
+            // Отправляем FCM уведомление
+            await sendFCMNotification(
+                '🔓 Приложения разблокированы',
+                `Разблокировано ${selected.length} приложений`,
+                { type: 'unblock_apps', apps: selected.join(',') }
+            );
+            
             setTimeout(() => loadApps(), 1000);
         } catch (error) {
             console.error('Ошибка:', error);
@@ -392,7 +509,14 @@ async function toggleBlockSelected() {
         try {
             await db.ref('commands/block_apps').set(sanitized);
             showNotification('Успешно', `Заблокировано ${selected.length} приложений`);
-            // Обновляем список
+            
+            // Отправляем FCM уведомление
+            await sendFCMNotification(
+                '🔒 Приложения заблокированы',
+                `Заблокировано ${selected.length} приложений`,
+                { type: 'block_apps', apps: selected.join(',') }
+            );
+            
             setTimeout(() => loadApps(), 1000);
         } catch (error) {
             console.error('Ошибка:', error);
@@ -467,7 +591,7 @@ async function clearHistory() {
 // Статистика (только пользовательские приложения)
 async function loadStats() {
     const tbody = document.getElementById('statsBody');
-    tbody.innerHTML = '<td><td colspan="2" style="text-align: center;">Загрузка...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="2" style="text-align: center;">Загрузка...</td></tr>';
     
     try {
         const appsSnapshot = await db.ref('device/apps_list').get();
