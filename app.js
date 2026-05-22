@@ -130,8 +130,7 @@ async function sendFCMNotification(title, body, data = {}) {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'Authorization': 'key=P621gghUekTYch5hQL7IXdRFKBk5-sifwsj-rfabEQ4
-'
+                'Authorization': 'key=P621gghUekTYch5hQL7IXdRFKBk5-sifwsj-rfabEQ4'
             },
             body: JSON.stringify({
                 to: fcmToken,
