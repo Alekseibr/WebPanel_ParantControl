@@ -15,39 +15,11 @@ firebase.initializeApp({
 const messaging = firebase.messaging();
 
 messaging.onBackgroundMessage((payload) => {
-    console.log('Получено фоновое сообщение:', payload);
-    
     const notificationTitle = payload.notification?.title || 'Родительский контроль';
     const notificationOptions = {
         body: payload.notification?.body || 'Новое событие',
         icon: '/icon-192.png',
-        badge: '/icon-192.png',
-        vibrate: [200, 100, 200],
-        data: {
-            url: payload.data?.url || '/',
-            click_action: payload.data?.click_action || '/'
-        }
+        badge: '/icon-192.png'
     };
-    
     self.registration.showNotification(notificationTitle, notificationOptions);
-});
-
-// Обработка клика по уведомлению (открывает веб-панель)
-self.addEventListener('notificationclick', (event) => {
-    event.notification.close();
-    const urlToOpen = event.notification.data?.url || '/';
-    
-    event.waitUntil(
-        clients.matchAll({ type: 'window', includeUncontrolled: true })
-            .then(windowClients => {
-                for (let client of windowClients) {
-                    if (client.url === urlToOpen && 'focus' in client) {
-                        return client.focus();
-                    }
-                }
-                if (clients.openWindow) {
-                    return clients.openWindow(urlToOpen);
-                }
-            })
-    );
 });
