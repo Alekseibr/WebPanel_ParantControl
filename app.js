@@ -1,13 +1,13 @@
 // For Firebase JS SDK v7.20.0 and later, measurementId is optional
 const firebaseConfig = {
-  apiKey: "AIzaSyAStWFyRYy4RVSEfQ5obMJwPCOslAaBCGU",
-  authDomain: "parentalcontrol-c7f7a.firebaseapp.com",
-  databaseURL: "https://parentalcontrol-c7f7a-default-rtdb.europe-west1.firebasedatabase.app",
-  projectId: "parentalcontrol-c7f7a",
-  storageBucket: "parentalcontrol-c7f7a.firebasestorage.app",
-  messagingSenderId: "773827816415",
-  appId: "1:773827816415:web:9b4a2c9ed3e297706a326a",
-  measurementId: "G-1Q58H5V8YT"
+    apiKey: "AIzaSyAStWFyRYy4RVSEfQ5obMJwPCOslAaBCGU",
+    authDomain: "parentalcontrol-c7f7a.firebaseapp.com",
+    databaseURL: "https://parentalcontrol-c7f7a-default-rtdb.europe-west1.firebasedatabase.app",
+    projectId: "parentalcontrol-c7f7a",
+    storageBucket: "parentalcontrol-c7f7a.firebasestorage.app",
+    messagingSenderId: "773827816415",
+    appId: "1:773827816415:web:9b4a2c9ed3e297706a326a",
+    measurementId: "G-1Q58H5V8YT"
 };
 
 firebase.initializeApp(firebaseConfig);
@@ -21,11 +21,14 @@ let currentUser = null;
 let currentBlockingState = false;
 let appsList = [];
 let notificationTimeout = null;
-let suspendedAppsList = []; // Список заблокированных приложений
+let suspendedAppsList = [];
 
 // FCM переменные
 let messaging = null;
 let fcmToken = null;
+
+// Базовый путь к сайту (если сайт в подпапке)
+const BASE_PATH = '/WebPanel_ParantControl';
 
 function escapeHtml(text) {
     if (!text) return '';
@@ -70,7 +73,6 @@ function showNotification(title, body) {
 
 // ========== FCM НАСТРОЙКА ==========
 async function initFCM() {
-  const registration = await navigator.serviceWorker.register('/WebPanel_ParantControl/firebase-messaging-sw.js');
     try {
         if (!('Notification' in window)) {
             console.log('Браузер не поддерживает уведомления');
@@ -83,12 +85,17 @@ async function initFCM() {
             return;
         }
         
+        // Регистрируем Service Worker с правильным путём
+        const swPath = `${BASE_PATH}/firebase-messaging-sw.js`;
+        const registration = await navigator.serviceWorker.register(swPath);
+        console.log('Service Worker зарегистрирован:', swPath);
+        
         messaging = firebase.messaging();
         
         // VAPID ключ (скопируйте из настроек Firebase Cloud Messaging)
         const vapidKey = 'BGqQXzbiaa-FpiqNfGSDy54CqMCfj7vKgtTTOe8sbbl_9BBc4PCVt56dhbYfEq-s5bwJbGV_Ive0b7qdnIM6QKk';
         
-        fcmToken = await messaging.getToken({ vapidKey: vapidKey });
+        fcmToken = await messaging.getToken({ vapidKey: vapidKey, serviceWorkerRegistration: registration });
         console.log('FCM Token получен:', fcmToken);
         
         // Сохраняем токен в Firebase
@@ -123,7 +130,8 @@ async function sendFCMNotification(title, body, data = {}) {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'Authorization': 'key=ВАШ_SERVER_KEY'
+                'Authorization': 'key=P621gghUekTYch5hQL7IXdRFKBk5-sifwsj-rfabEQ4
+'
             },
             body: JSON.stringify({
                 to: fcmToken,
@@ -170,7 +178,6 @@ auth.onAuthStateChanged(async (user) => {
         }
         document.getElementById('welcomeMessage').innerHTML = `Добро пожаловать, ${parentName}! 👋`;
         
-        // Инициализируем FCM после входа
         await initFCM();
         
         initApp();
@@ -254,7 +261,7 @@ function initApp() {
     loadApps();
     loadHistory(1);
     loadStats();
-    loadSuspendedApps(); // Загружаем список заблокированных приложений
+    loadSuspendedApps();
     setupRealtimeListeners();
     setupButtons();
 }
@@ -270,7 +277,7 @@ function initMap() {
 async function loadSuspendedApps() {
     const snapshot = await db.ref('device/suspended_apps').get();
     suspendedAppsList = snapshot.val() || [];
-    updateToggleButtonState(); // Обновляем состояние кнопки
+    updateToggleButtonState();
 }
 
 // Управление блокировкой
@@ -278,16 +285,6 @@ async function loadBlockingState() {
     const snapshot = await db.ref('commands/blocking_enabled').get();
     currentBlockingState = snapshot.val() === true;
     updateToggleButton();
-    
-    // Обновляем статус тумблера в веб-панели
-    const toggle = document.getElementById('toggleBlocking');
-    if (toggle) {
-        if (currentBlockingState) {
-            toggle.classList.add('active');
-        } else {
-            toggle.classList.remove('active');
-        }
-    }
 }
 
 function updateToggleButton() {
@@ -307,7 +304,6 @@ async function toggleBlocking() {
         updateToggleButton();
         showNotification('Блокировка', newState ? 'Включена' : 'Выключена');
         
-        // Отправляем FCM уведомление
         await sendFCMNotification(
             '🔒 Режим блокировки',
             newState ? 'Блокировка активирована' : 'Блокировка деактивирована',
@@ -326,7 +322,7 @@ async function loadDeviceStatus() {
     
     const now = Date.now();
     const lastSeen = data.lastSeen || 0;
-    const isRecent = (now - lastSeen) < 300000; // 5 минут
+    const isRecent = (now - lastSeen) < 300000;
     
     const statusDiv = document.getElementById('deviceStatusCard');
     const batteryText = document.getElementById('batteryText');
@@ -388,7 +384,6 @@ async function loadApps() {
         const snapshot = await db.ref('device/apps_list').get();
         const allApps = snapshot.val() || [];
         
-        // Обновляем список заблокированных
         await loadSuspendedApps();
         
         const userApps = allApps.filter(a => !a.isSystem);
@@ -408,7 +403,6 @@ async function loadApps() {
         }
         container.innerHTML = html;
         
-        // Добавляем обработчики для обновления состояния кнопки при выборе
         document.querySelectorAll('#appsContainer input').forEach(cb => {
             cb.addEventListener('change', () => updateToggleButtonState());
         });
@@ -439,7 +433,6 @@ function renderAppGroup(apps) {
     }).join('');
 }
 
-// Обновление состояния кнопки (Заблокировать / Разблокировать)
 function updateToggleButtonState() {
     const toggleBtn = document.getElementById('toggleBlockSelectedBtn');
     if (!toggleBtn) return;
@@ -458,7 +451,6 @@ function updateToggleButtonState() {
     
     toggleBtn.disabled = false;
     
-    // Проверяем, все ли выбранные приложения уже заблокированы
     const allSelectedBlocked = selected.every(pkg => suspendedAppsList.includes(pkg));
     
     if (allSelectedBlocked) {
@@ -470,9 +462,7 @@ function updateToggleButtonState() {
     }
 }
 
-// Одна кнопка с переключением
 async function toggleBlockSelected() {
-    const toggleBtn = document.getElementById('toggleBlockSelectedBtn');
     const selected = [];
     document.querySelectorAll('#appsContainer input:checked').forEach(cb => {
         selected.push(cb.value);
@@ -483,16 +473,13 @@ async function toggleBlockSelected() {
         return;
     }
     
-    // Проверяем, все ли выбранные приложения уже заблокированы
     const allSelectedBlocked = selected.every(pkg => suspendedAppsList.includes(pkg));
     
     if (allSelectedBlocked) {
-        // Разблокировать
         try {
             await db.ref('commands/unblock_apps').set(selected);
             showNotification('Успешно', `Разблокировано ${selected.length} приложений`);
             
-            // Отправляем FCM уведомление
             await sendFCMNotification(
                 '🔓 Приложения разблокированы',
                 `Разблокировано ${selected.length} приложений`,
@@ -505,13 +492,11 @@ async function toggleBlockSelected() {
             showNotification('Ошибка', 'Не удалось разблокировать');
         }
     } else {
-        // Заблокировать
         const sanitized = selected.map(pkg => pkg.replace(/\./g, '_'));
         try {
             await db.ref('commands/block_apps').set(sanitized);
             showNotification('Успешно', `Заблокировано ${selected.length} приложений`);
             
-            // Отправляем FCM уведомление
             await sendFCMNotification(
                 '🔒 Приложения заблокированы',
                 `Заблокировано ${selected.length} приложений`,
@@ -533,8 +518,7 @@ async function loadHistory(days) {
     container.innerHTML = '<div class="spinner"></div>';
     
     try {
-        const snapshot = await db.ref('kids/child_device/activity_history/all_events')
-            .once('value');
+        const snapshot = await db.ref('kids/child_device/activity_history/all_events').once('value');
         
         const events = [];
         snapshot.forEach(child => {
@@ -589,7 +573,7 @@ async function clearHistory() {
     }
 }
 
-// Статистика (только пользовательские приложения)
+// Статистика
 async function loadStats() {
     const tbody = document.getElementById('statsBody');
     tbody.innerHTML = '<tr><td colspan="2" style="text-align: center;">Загрузка...</td></tr>';
