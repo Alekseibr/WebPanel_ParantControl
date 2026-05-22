@@ -85,7 +85,7 @@ async function initFCM() {
         messaging = firebase.messaging();
         
         // VAPID ключ (скопируйте из настроек Firebase Cloud Messaging)
-        const vapidKey = 'ВАШ_VAPID_КЛЮЧ';
+        const vapidKey = 'BGqQXzbiaa-FpiqNfGSDy54CqMCfj7vKgtTTOe8sbbl_9BBc4PCVt56dhbYfEq-s5bwJbGV_Ive0b7qdnIM6QKk';
         
         fcmToken = await messaging.getToken({ vapidKey: vapidKey });
         console.log('FCM Token получен:', fcmToken);
