@@ -70,6 +70,7 @@ function showNotification(title, body) {
 
 // ========== FCM НАСТРОЙКА ==========
 async function initFCM() {
+  const registration = await navigator.serviceWorker.register('/WebPanel_ParantControl/firebase-messaging-sw.js');
     try {
         if (!('Notification' in window)) {
             console.log('Браузер не поддерживает уведомления');
