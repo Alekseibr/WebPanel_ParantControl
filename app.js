@@ -70,6 +70,50 @@ function showNotification(title, body) {
         setTimeout(() => notification.remove(), 300);
     }, 5000);
 }
+// Функция для отправки команды на получение геолокации
+async function requestLocation() {
+    try {
+        await db.ref('commands/get_location').set(true);
+        showNotification('Запрос отправлен', 'Ожидайте определение местоположения...');
+        
+        // Через 5 секунд обновляем карту
+        setTimeout(() => {
+            const locationRef = db.ref('kids/child_device/location');
+            locationRef.once('value').then((snapshot) => {
+                const loc = snapshot.val();
+                if (loc && loc.lat && loc.lng) {
+                    if (marker) {
+                        marker.setLatLng([loc.lat, loc.lng]);
+                    } else {
+                        marker = L.marker([loc.lat, loc.lng]).addTo(map);
+                        marker.bindPopup('Ребёнок здесь');
+                    }
+                    map.setView([loc.lat, loc.lng], 15);
+                    document.getElementById('locationInfo').innerHTML = `
+                        📍 Широта: ${loc.lat.toFixed(6)}<br>
+                        📍 Долгота: ${loc.lng.toFixed(6)}<br>
+                        🎯 Точность: ${Math.round(loc.accuracy || 50)} м<br>
+                        🕐 ${new Date(loc.time).toLocaleString()}
+                    `;
+                } else {
+                    showNotification('Ошибка', 'Не удалось получить координаты');
+                }
+            });
+        }, 5000);
+    } catch (error) {
+        console.error('Ошибка запроса геолокации:', error);
+        showNotification('Ошибка', 'Не удалось отправить запрос');
+    }
+}
+
+// Добавь обработчик кнопки в setupButtons()
+function setupButtons() {
+    // ... существующие кнопки ...
+    const requestLocationBtn = document.getElementById('requestLocationBtn');
+    if (requestLocationBtn) {
+        requestLocationBtn.onclick = () => requestLocation();
+    }
+}
 
 // ========== FCM НАСТРОЙКА ==========
 async function initFCM() {
