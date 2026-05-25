@@ -163,26 +163,33 @@ async function initFCM() {
 }
 
 // ========== ОТПРАВКА УВЕДОМЛЕНИЙ ЧЕРЕЗ NTFY (БЕЗ CORS) ==========
-// УНИКАЛЬНАЯ ТЕМА - ПРИДУМАЙ СВОЮ СЛОЖНУЮ СТРОКУ
+// ========== NTFY УВЕДОМЛЕНИЯ (РАБОТАЕТ С РУССКИМ ТЕКСТОМ) ==========
 const NTFY_TOPIC = 'parental_control_secret_2026_oppo_k13';
 
 async function sendNotification(title, message) {
+    // Преобразуем русский заголовок в английский для совместимости с HTTP-заголовками
+    let englishTitle = 'Parental Control';
+    if (title.includes('Включена') || title.includes('ВКЛЮЧЕНА')) englishTitle = 'BLOCKING ON';
+    else if (title.includes('Выключена') || title.includes('ВЫКЛЮЧЕНА')) englishTitle = 'BLOCKING OFF';
+    else if (title.includes('РАЗБЛОКИРОВАНЫ')) englishTitle = 'APPS UNBLOCKED';
+    else if (title.includes('ЗАБЛОКИРОВАНЫ')) englishTitle = 'APPS BLOCKED';
+    else if (title.includes('СИНХРОНИЗАЦИЯ')) englishTitle = 'SYNC COMPLETE';
+    
     try {
         const response = await fetch(`https://ntfy.sh/${NTFY_TOPIC}`, {
             method: 'POST',
             body: message,
             headers: {
-                'Title': title,
+                'Title': englishTitle,
                 'Priority': 'high',
-                'Tags': 'warning',
-                'Click': 'https://alekseibr.github.io/WebPanel_ParantControl/'
+                'Tags': 'warning'
             }
         });
         
         if (response.ok) {
-            console.log('✅ Уведомление отправлено через ntfy');
+            console.log('✅ Уведомление отправлено:', englishTitle);
         } else {
-            console.log('⚠️ Ошибка отправки уведомления');
+            console.log('⚠️ Ошибка отправки, статус:', response.status);
         }
     } catch (error) {
         console.error('❌ Ошибка отправки уведомления:', error);
