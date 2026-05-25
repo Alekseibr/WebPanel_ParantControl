@@ -1,4 +1,4 @@
-// For Firebase JS SDK v7.20.0 and later, measurementId is optional
+// Firebase конфигурация (ЗАМЕНИТЕ НА ВАШУ)
 const firebaseConfig = {
     apiKey: "AIzaSyAStWFyRYy4RVSEfQ5obMJwPCOslAaBCGU",
     authDomain: "parentalcontrol-c7f7a.firebaseapp.com",
@@ -20,15 +20,8 @@ let accuracyCircle = null;
 let currentUser = null;
 let currentBlockingState = false;
 let appsList = [];
-let notificationTimeout = null;
 let suspendedAppsList = [];
-
-// FCM переменные
-let messaging = null;
-let fcmToken = null;
-
-// Базовый путь к сайту (если сайт в подпапке)
-const BASE_PATH = '/WebPanel_ParantControl';
+let notificationTimeout = null;
 
 function escapeHtml(text) {
     if (!text) return '';
@@ -42,177 +35,31 @@ function formatTime(timestamp) {
     return new Date(timestamp).toLocaleString('ru-RU');
 }
 
-function formatDuration(seconds) {
-    if (!seconds) return '0 сек';
-    if (seconds < 60) return `${Math.round(seconds)} сек`;
-    const minutes = Math.floor(seconds / 60);
-    if (minutes < 60) return `${minutes} мин ${Math.round(seconds % 60)} сек`;
-    const hours = Math.floor(minutes / 60);
-    return `${hours} ч ${minutes % 60} мин`;
-}
-
 function showNotification(title, body) {
     const existing = document.getElementById('inAppNotification');
     if (existing) existing.remove();
     if (notificationTimeout) clearTimeout(notificationTimeout);
-
     const notification = document.createElement('div');
     notification.id = 'inAppNotification';
     notification.className = 'in-app-notification';
-    notification.innerHTML = `
-        <div style="font-weight: bold; margin-bottom: 5px;">${escapeHtml(title)}</div>
-        <div style="font-size: 14px; opacity: 0.9;">${escapeHtml(body)}</div>
-    `;
+    notification.innerHTML = `<div style="font-weight: bold; margin-bottom: 5px;">${escapeHtml(title)}</div><div style="font-size: 14px; opacity: 0.9;">${escapeHtml(body)}</div>`;
     document.body.appendChild(notification);
-
     notificationTimeout = setTimeout(() => {
         notification.style.animation = 'slideOut 0.3s ease';
         setTimeout(() => notification.remove(), 300);
     }, 5000);
 }
-// Функция для отправки команды на получение геолокации
-async function requestLocation() {
-    try {
-        await db.ref('commands/get_location').set(true);
-        showNotification('Запрос отправлен', 'Ожидайте определение местоположения...');
-        
-        // Через 5 секунд обновляем карту
-        setTimeout(() => {
-            const locationRef = db.ref('kids/child_device/location');
-            locationRef.once('value').then((snapshot) => {
-                const loc = snapshot.val();
-                if (loc && loc.lat && loc.lng) {
-                    if (marker) {
-                        marker.setLatLng([loc.lat, loc.lng]);
-                    } else {
-                        marker = L.marker([loc.lat, loc.lng]).addTo(map);
-                        marker.bindPopup('Ребёнок здесь');
-                    }
-                    map.setView([loc.lat, loc.lng], 15);
-                    document.getElementById('locationInfo').innerHTML = `
-                        📍 Широта: ${loc.lat.toFixed(6)}<br>
-                        📍 Долгота: ${loc.lng.toFixed(6)}<br>
-                        🎯 Точность: ${Math.round(loc.accuracy || 50)} м<br>
-                        🕐 ${new Date(loc.time).toLocaleString()}
-                    `;
-                } else {
-                    showNotification('Ошибка', 'Не удалось получить координаты');
-                }
-            });
-        }, 5000);
-    } catch (error) {
-        console.error('Ошибка запроса геолокации:', error);
-        showNotification('Ошибка', 'Не удалось отправить запрос');
-    }
-}
-
-// Добавь обработчик кнопки в setupButtons()
-function setupButtons() {
-    // ... существующие кнопки ...
-    const requestLocationBtn = document.getElementById('requestLocationBtn');
-    if (requestLocationBtn) {
-        requestLocationBtn.onclick = () => requestLocation();
-    }
-}
-
-// ========== FCM НАСТРОЙКА ==========
-async function initFCM() {
-    try {
-        if (!('Notification' in window)) {
-            console.log('Браузер не поддерживает уведомления');
-            return;
-        }
-        
-        const permission = await Notification.requestPermission();
-        if (permission !== 'granted') {
-            console.log('Разрешение на уведомления не получено');
-            return;
-        }
-        
-        // Регистрируем Service Worker с правильным путём
-        const swPath = `${BASE_PATH}/firebase-messaging-sw.js`;
-        const registration = await navigator.serviceWorker.register(swPath);
-        console.log('Service Worker зарегистрирован:', swPath);
-        
-        messaging = firebase.messaging();
-        
-        // VAPID ключ (скопируйте из настроек Firebase Cloud Messaging)
-        const vapidKey = 'BGqQXzbiaa-FpiqNfGSDy54CqMCfj7vKgtTTOe8sbbl_9BBc4PCVt56dhbYfEq-s5bwJbGV_Ive0b7qdnIM6QKk';
-        
-        fcmToken = await messaging.getToken({ vapidKey: vapidKey, serviceWorkerRegistration: registration });
-        console.log('FCM Token получен:', fcmToken);
-        
-        // Сохраняем токен в Firebase
-        await db.ref('fcm_tokens').push().set({
-            token: fcmToken,
-            userId: currentUser?.uid,
-            timestamp: Date.now()
-        });
-        
-        messaging.onMessage((payload) => {
-            console.log('Получено FCM уведомление:', payload);
-            showNotification(
-                payload.notification?.title || 'Родительский контроль',
-                payload.notification?.body || 'Команда получена'
-            );
-        });
-        
-    } catch (error) {
-        console.error('Ошибка инициализации FCM:', error);
-    }
-}
-
-// ========== ОТПРАВКА УВЕДОМЛЕНИЙ ЧЕРЕЗ NTFY (БЕЗ CORS) ==========
-// ========== NTFY УВЕДОМЛЕНИЯ (РАБОТАЕТ С РУССКИМ ТЕКСТОМ) ==========
-const NTFY_TOPIC = 'parental_control_secret_2026_oppo_k13';
-
-async function sendNotification(title, message) {
-    // Преобразуем русский заголовок в английский для совместимости с HTTP-заголовками
-    let englishTitle = 'Parental Control';
-    if (title.includes('Включена') || title.includes('ВКЛЮЧЕНА')) englishTitle = 'BLOCKING ON';
-    else if (title.includes('Выключена') || title.includes('ВЫКЛЮЧЕНА')) englishTitle = 'BLOCKING OFF';
-    else if (title.includes('РАЗБЛОКИРОВАНЫ')) englishTitle = 'APPS UNBLOCKED';
-    else if (title.includes('ЗАБЛОКИРОВАНЫ')) englishTitle = 'APPS BLOCKED';
-    else if (title.includes('СИНХРОНИЗАЦИЯ')) englishTitle = 'SYNC COMPLETE';
-    
-    try {
-        const response = await fetch(`https://ntfy.sh/${NTFY_TOPIC}`, {
-            method: 'POST',
-            body: message,
-            headers: {
-                'Title': englishTitle,
-                'Priority': 'high',
-                'Tags': 'warning'
-            }
-        });
-        
-        if (response.ok) {
-            console.log('✅ Уведомление отправлено:', englishTitle);
-        } else {
-            console.log('⚠️ Ошибка отправки, статус:', response.status);
-        }
-    } catch (error) {
-        console.error('❌ Ошибка отправки уведомления:', error);
-    }
-}
 
 // Аутентификация
-auth.onAuthStateChanged(async (user) => {
+auth.onAuthStateChanged((user) => {
     if (user) {
         currentUser = user;
         document.getElementById('authContainer').style.display = 'none';
         document.getElementById('appContainer').style.display = 'block';
-        
         const email = user.email;
         let parentName = 'Родитель';
-        if (email) {
-            const name = email.split('@')[0];
-            parentName = name.charAt(0).toUpperCase() + name.slice(1);
-        }
+        if (email) parentName = email.split('@')[0];
         document.getElementById('welcomeMessage').innerHTML = `Добро пожаловать, ${parentName}! 👋`;
-        
-        await initFCM();
-        
         initApp();
         addLogoutButton();
     } else {
@@ -221,56 +68,41 @@ auth.onAuthStateChanged(async (user) => {
     }
 });
 
-// Обработчик входа
 document.addEventListener('DOMContentLoaded', () => {
     const loginBtn = document.getElementById('loginButton');
     const loginEmail = document.getElementById('loginEmail');
     const loginPassword = document.getElementById('loginPassword');
     const loginError = document.getElementById('loginError');
-    
     if (loginBtn) {
         loginBtn.addEventListener('click', async () => {
             const email = loginEmail.value.trim();
             const password = loginPassword.value.trim();
-            
             if (!email || !password) {
                 loginError.textContent = 'Введите email и пароль';
                 loginError.style.display = 'block';
                 return;
             }
-            
             loginError.style.display = 'none';
             loginBtn.disabled = true;
             loginBtn.textContent = 'Вход...';
-            
             try {
                 await auth.signInWithEmailAndPassword(email, password);
             } catch (error) {
                 let errorMessage = 'Ошибка входа';
-                if (error.code === 'auth/user-not-found') {
-                    errorMessage = 'Пользователь не найден';
-                } else if (error.code === 'auth/wrong-password') {
-                    errorMessage = 'Неверный пароль';
-                } else if (error.code === 'auth/invalid-email') {
-                    errorMessage = 'Неверный формат email';
-                }
+                if (error.code === 'auth/user-not-found') errorMessage = 'Пользователь не найден';
+                else if (error.code === 'auth/wrong-password') errorMessage = 'Неверный пароль';
+                else if (error.code === 'auth/invalid-email') errorMessage = 'Неверный формат email';
                 loginError.textContent = errorMessage;
                 loginError.style.display = 'block';
                 loginBtn.disabled = false;
                 loginBtn.textContent = 'Войти';
             }
         });
-        
-        loginPassword.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') loginBtn.click();
-        });
+        loginPassword.addEventListener('keypress', (e) => { if (e.key === 'Enter') loginBtn.click(); });
     }
 });
 
-function logout() {
-    auth.signOut();
-    location.reload();
-}
+function logout() { auth.signOut(); location.reload(); }
 
 function addLogoutButton() {
     const header = document.querySelector('.header');
@@ -285,15 +117,12 @@ function addLogoutButton() {
     }
 }
 
-// Инициализация
 function initApp() {
     initMap();
     loadBlockingState();
     loadDeviceStatus();
     loadLocation();
     loadApps();
-    loadHistory(1);
-    loadStats();
     loadSuspendedApps();
     setupRealtimeListeners();
     setupButtons();
@@ -301,19 +130,15 @@ function initApp() {
 
 function initMap() {
     map = L.map('map').setView([55.751244, 37.618423], 13);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '© OpenStreetMap contributors'
-    }).addTo(map);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 }
 
-// Загрузка списка заблокированных приложений
 async function loadSuspendedApps() {
     const snapshot = await db.ref('device/suspended_apps').get();
     suspendedAppsList = snapshot.val() || [];
     updateToggleButtonState();
 }
 
-// Управление блокировкой
 async function loadBlockingState() {
     const snapshot = await db.ref('commands/blocking_enabled').get();
     currentBlockingState = snapshot.val() === true;
@@ -322,11 +147,8 @@ async function loadBlockingState() {
 
 function updateToggleButton() {
     const toggle = document.getElementById('toggleBlocking');
-    if (currentBlockingState) {
-        toggle.classList.add('active');
-    } else {
-        toggle.classList.remove('active');
-    }
+    if (currentBlockingState) toggle.classList.add('active');
+    else toggle.classList.remove('active');
 }
 
 async function toggleBlocking() {
@@ -336,32 +158,21 @@ async function toggleBlocking() {
         currentBlockingState = newState;
         updateToggleButton();
         showNotification('Блокировка', newState ? 'Включена' : 'Выключена');
-        
-        // Отправка через ntfy вместо FCM
-        await sendNotification(
-            newState ? '🔒 БЛОКИРОВКА ВКЛЮЧЕНА' : '🔓 БЛОКИРОВКА ВЫКЛЮЧЕНА',
-            `Родитель ${newState ? 'заблокировал' : 'разблокировал'} устройство`
-        );
-        
     } catch (error) {
         console.error('Ошибка:', error);
         showNotification('Ошибка', 'Не удалось изменить состояние');
     }
 }
 
-// Статус устройства
 async function loadDeviceStatus() {
     const snapshot = await db.ref('device/status').get();
     const data = snapshot.val() || {};
-    
     const now = Date.now();
     const lastSeen = data.lastSeen || 0;
     const isRecent = (now - lastSeen) < 300000;
-    
     const statusDiv = document.getElementById('deviceStatusCard');
     const batteryText = document.getElementById('batteryText');
     const lastSeenText = document.getElementById('lastSeenText');
-    
     if (isRecent && data.status === 'online') {
         statusDiv.className = 'status status-online';
         statusDiv.innerHTML = '<span class="status-badge online"></span> В сети';
@@ -369,25 +180,18 @@ async function loadDeviceStatus() {
         statusDiv.className = 'status status-offline';
         statusDiv.innerHTML = '<span class="status-badge offline"></span> Не в сети';
     }
-    
     batteryText.textContent = data.battery ? `${data.battery}%` : '-';
     lastSeenText.textContent = formatTime(data.lastSeen);
 }
 
-// Геолокация
 function loadLocation() {
-    const locationRef = db.ref('device/location');
+    const locationRef = db.ref('kids/child_device/location');
     locationRef.on('value', (snapshot) => {
         const loc = snapshot.val();
         if (loc && loc.lat && loc.lng) {
-            if (marker) {
-                marker.setLatLng([loc.lat, loc.lng]);
-            } else {
-                marker = L.marker([loc.lat, loc.lng]).addTo(map);
-                marker.bindPopup('Ребёнок здесь');
-            }
+            if (marker) marker.setLatLng([loc.lat, loc.lng]);
+            else marker = L.marker([loc.lat, loc.lng]).addTo(map);
             map.setView([loc.lat, loc.lng], 15);
-            
             if (accuracyCircle) map.removeLayer(accuracyCircle);
             accuracyCircle = L.circle([loc.lat, loc.lng], {
                 radius: loc.accuracy || 50,
@@ -395,34 +199,26 @@ function loadLocation() {
                 fillColor: '#007bff',
                 fillOpacity: 0.1
             }).addTo(map);
-            
             document.getElementById('locationInfo').innerHTML = `
-                📍 Широта: ${loc.lat.toFixed(6)}<br>
-                📍 Долгота: ${loc.lng.toFixed(6)}<br>
+                📍 ${loc.lat.toFixed(6)}, ${loc.lng.toFixed(6)}<br>
                 🎯 Точность: ${Math.round(loc.accuracy || 50)} м<br>
-                🕐 ${formatTime(loc.time)}
+                🕐 ${new Date(loc.time).toLocaleString()}
             `;
         }
     });
 }
 
-// Приложения
 async function loadApps() {
     const container = document.getElementById('appsContainer');
     container.innerHTML = '<div class="spinner"></div>';
-    
     try {
         await db.ref('commands/request_apps').set(true);
         await new Promise(resolve => setTimeout(resolve, 3000));
-        
         const snapshot = await db.ref('device/apps_list').get();
         const allApps = snapshot.val() || [];
-        
         await loadSuspendedApps();
-        
         const userApps = allApps.filter(a => !a.isSystem);
         const systemApps = allApps.filter(a => a.isSystem);
-        
         let html = '';
         if (userApps.length > 0) {
             html += '<div class="group-title">📱 Пользовательские приложения</div>';
@@ -432,20 +228,12 @@ async function loadApps() {
             html += '<div class="group-title">⚙️ Системные приложения</div>';
             html += renderAppGroup(systemApps);
         }
-        if (allApps.length === 0) {
-            html = '<div style="text-align: center; padding: 20px; color: #666;">Нет приложений</div>';
-        }
+        if (allApps.length === 0) html = '<div style="text-align:center; padding:20px;">Нет приложений</div>';
         container.innerHTML = html;
-        
-        document.querySelectorAll('#appsContainer input').forEach(cb => {
-            cb.addEventListener('change', () => updateToggleButtonState());
-        });
-        
-        window.allAppsList = allApps;
-        
+        document.querySelectorAll('#appsContainer input').forEach(cb => cb.addEventListener('change', () => updateToggleButtonState()));
     } catch (error) {
-        console.error('Ошибка загрузки приложений:', error);
-        container.innerHTML = '<div style="text-align: center; padding: 20px; color: red;">Ошибка загрузки</div>';
+        console.error('Ошибка:', error);
+        container.innerHTML = '<div style="text-align:center; padding:20px; color:red;">Ошибка</div>';
     }
 }
 
@@ -453,13 +241,10 @@ function renderAppGroup(apps) {
     return apps.map(app => {
         const isBlocked = suspendedAppsList.includes(app.packageName);
         return `
-            <div class="app-item ${app.isSystem ? 'system' : ''}" data-package="${app.packageName}">
+            <div class="app-item ${app.isSystem ? 'system' : ''}">
                 <input type="checkbox" value="${escapeHtml(app.packageName)}" id="app_${app.packageName.replace(/\./g, '_')}">
                 <label for="app_${app.packageName.replace(/\./g, '_')}">
-                    <div class="app-name">
-                        ${escapeHtml(app.name)}
-                        ${isBlocked ? ' <span style="color: #dc3545; font-size: 11px;">(заблокировано)</span>' : ''}
-                    </div>
+                    <div class="app-name">${escapeHtml(app.name)}${isBlocked ? ' <span style="color:#dc3545;">(заблокировано)</span>' : ''}</div>
                     <div class="app-package">${escapeHtml(app.packageName)}</div>
                 </label>
             </div>
@@ -470,23 +255,15 @@ function renderAppGroup(apps) {
 function updateToggleButtonState() {
     const toggleBtn = document.getElementById('toggleBlockSelectedBtn');
     if (!toggleBtn) return;
-    
-    const selected = [];
-    document.querySelectorAll('#appsContainer input:checked').forEach(cb => {
-        selected.push(cb.value);
-    });
-    
+    const selected = Array.from(document.querySelectorAll('#appsContainer input:checked')).map(cb => cb.value);
     if (selected.length === 0) {
         toggleBtn.textContent = '🔒 Выберите приложения';
         toggleBtn.style.background = '#ccc';
         toggleBtn.disabled = true;
         return;
     }
-    
     toggleBtn.disabled = false;
-    
     const allSelectedBlocked = selected.every(pkg => suspendedAppsList.includes(pkg));
-    
     if (allSelectedBlocked) {
         toggleBtn.textContent = '🔓 Разблокировать выбранные';
         toggleBtn.style.background = '#28a745';
@@ -497,49 +274,26 @@ function updateToggleButtonState() {
 }
 
 async function toggleBlockSelected() {
-    const selected = [];
-    document.querySelectorAll('#appsContainer input:checked').forEach(cb => {
-        selected.push(cb.value);
-    });
-    
+    const selected = Array.from(document.querySelectorAll('#appsContainer input:checked')).map(cb => cb.value);
     if (selected.length === 0) {
         showNotification('Предупреждение', 'Выберите приложения');
         return;
     }
-    
-    // Проверяем, все ли выбранные приложения уже заблокированы
     const allSelectedBlocked = selected.every(pkg => suspendedAppsList.includes(pkg));
-    
     if (allSelectedBlocked) {
-        // РАЗБЛОКИРОВАТЬ
         try {
             await db.ref('commands/unblock_apps').set(selected);
             showNotification('Успешно', `Разблокировано ${selected.length} приложений`);
-            
-            // Отправляем ntfy уведомление
-            await sendNotification(
-                '🔓 ПРИЛОЖЕНИЯ РАЗБЛОКИРОВАНЫ',
-                `Разблокировано ${selected.length} приложений\n${selected.join(', ').slice(0, 100)}`
-            );
-            
             setTimeout(() => loadApps(), 1000);
         } catch (error) {
             console.error('Ошибка:', error);
             showNotification('Ошибка', 'Не удалось разблокировать');
         }
     } else {
-        // ЗАБЛОКИРОВАТЬ
         const sanitized = selected.map(pkg => pkg.replace(/\./g, '_'));
         try {
             await db.ref('commands/block_apps').set(sanitized);
             showNotification('Успешно', `Заблокировано ${selected.length} приложений`);
-            
-            // Отправляем ntfy уведомление
-            await sendNotification(
-                '🔒 ПРИЛОЖЕНИЯ ЗАБЛОКИРОВАНЫ',
-                `Заблокировано ${selected.length} приложений\n${selected.join(', ').slice(0, 100)}`
-            );
-            
             setTimeout(() => loadApps(), 1000);
         } catch (error) {
             console.error('Ошибка:', error);
@@ -548,246 +302,57 @@ async function toggleBlockSelected() {
     }
 }
 
-// История
-async function loadHistory(days) {
-     // Обновляем активную кнопку
-    document.querySelectorAll('.history-period').forEach(btn => {
-        btn.classList.remove('active');
-        if (btn.getAttribute('data-days') == days) {
-            btn.classList.add('active');
-        }
-    });
-    const cutoff = Date.now() - days * 86400000;
-    const container = document.getElementById('historyList');
-    
-    if (!container) {
-        console.error('Элемент historyList не найден');
-        return;
-    }
-    
-    container.innerHTML = '<div style="text-align: center; padding: 40px;">Загрузка...</div>';
-    
-    try {
-        // Получаем данные из Firebase
-        const snapshot = await db.ref('kids/child_device/activity_history/all_events')
-            .orderByChild('device_time')
-            .startAt(cutoff)
-            .once('value');
-        
-        const events = [];
-        snapshot.forEach(child => {
-            events.push(child.val());
-        });
-        
-        console.log('Получено событий:', events.length); // Проверка в консоли
-        
-        if (events.length === 0) {
-            container.innerHTML = '<div style="text-align: center; padding: 40px; color: #666;">Нет событий за выбранный период</div>';
-            return;
-        }
-        
-        // Сортируем по времени (новые сверху)
-        events.sort((a, b) => (b.device_time || 0) - (a.device_time || 0));
-        
-        // Отображаем события
-        let html = '';
-        for (const event of events) {
-            let icon = '📋';
-            let typeClass = '';
-            
-            switch (event.type) {
-                case 'app_launch':
-                    icon = '🚀';
-                    typeClass = 'history-app-launch';
-                    break;
-                case 'status_change':
-                    icon = event.title?.includes('в сети') ? '🟢' : '🔴';
-                    typeClass = 'history-status-change';
-                    break;
-                case 'kiosk_start':
-                    icon = '🟢';
-                    typeClass = 'history-kiosk-start';
-                    break;
-                case 'kiosk_exit':
-                    icon = '🔴';
-                    typeClass = 'history-kiosk-exit';
-                    break;
-                case 'location':
-                    icon = '📍';
-                    typeClass = 'history-location';
-                    break;
-                default:
-                    icon = '📌';
-            }
-            
-            const eventDate = new Date(event.device_time);
-            const timeStr = eventDate.toLocaleString('ru-RU');
-            
-            html += `
-                <div class="history-item ${typeClass}">
-                    <div class="history-icon">${icon}</div>
-                    <div class="history-content">
-                        <div class="history-title">${escapeHtml(event.title || 'Событие')}</div>
-                        <div class="history-details">${escapeHtml(event.details || '')}</div>
-                    </div>
-                    <div class="history-time">${timeStr}</div>
-                </div>
-            `;
-        }
-        
-        container.innerHTML = html;
-        
-    } catch (error) {
-        console.error('Ошибка загрузки истории:', error);
-        container.innerHTML = '<div style="text-align: center; padding: 40px; color: red;">Ошибка загрузки истории</div>';
-    }
-}
-
-async function clearHistory() {
-    if (!confirm('⚠️ Очистить всю историю? Это действие нельзя отменить.')) return;
-    try {
-        await db.ref('kids/child_device/activity_history').remove();
-        showNotification('Готово', 'История очищена');
-        loadHistory(7);
-    } catch (error) {
-        console.error('Ошибка:', error);
-        showNotification('Ошибка', 'Не удалось очистить историю');
-    }
-}
-
-// Статистика
-async function loadStats() {
-    const tbody = document.getElementById('statsBody');
-    tbody.innerHTML = '<tr><td colspan="2" style="text-align: center;">Загрузка...</td></tr>';
-    
-    try {
-        const appsSnapshot = await db.ref('device/apps_list').get();
-        const allApps = appsSnapshot.val() || [];
-        const userAppPackages = allApps.filter(a => !a.isSystem).map(a => a.packageName);
-        
-        const snapshot = await db.ref('device/usage_stats').get();
-        let stats = snapshot.val() || {};
-        
-        const restoredStats = {};
-        Object.keys(stats).forEach(key => {
-            const originalKey = key.replace(/_/g, '.');
-            restoredStats[originalKey] = stats[key];
-        });
-        
-        const userStats = {};
-        for (const [pkg, time] of Object.entries(restoredStats)) {
-            if (userAppPackages.includes(pkg)) {
-                userStats[pkg] = time;
-            }
-        }
-        
-        const entries = Object.entries(userStats);
-        
-        if (entries.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="2" style="text-align: center;">Нет данных (только пользовательские приложения)</td></tr>';
-            return;
-        }
-        
-        entries.sort((a, b) => b[1] - a[1]);
-        tbody.innerHTML = entries.map(([pkg, time]) => `
-            <tr>
-                <td style="word-break: break-all;">${escapeHtml(pkg)}</td>
-                <td>${formatDuration(Math.round(time / 1000))}</td>
-            </tr>
-        `).join('');
-    } catch (error) {
-        console.error('Ошибка:', error);
-        tbody.innerHTML = '<tr><td colspan="2" style="text-align: center;">Ошибка загрузки</td></tr>';
-    }
-}
-
-// ========== ОБНОВЛЁННАЯ СИНХРОНИЗАЦИЯ ==========
 async function sync() {
     const syncBtn = document.getElementById('syncBtn');
     const syncStatus = document.getElementById('syncStatus');
-    
     syncBtn.disabled = true;
     syncStatus.textContent = 'Синхронизация...';
-    
     try {
         await db.ref('commands/sync_request').set(true);
         await new Promise(resolve => setTimeout(resolve, 2000));
         await loadDeviceStatus();
         await loadLocation();
         await loadApps();
-        await loadStats();
-        
-        await sendNotification('🔄 СИНХРОНИЗАЦИЯ', 'Данные успешно обновлены');
-        
         syncStatus.textContent = '✅ Готово';
         setTimeout(() => { syncStatus.textContent = 'Готово'; }, 2000);
     } catch (error) {
         console.error('Ошибка:', error);
         syncStatus.textContent = '❌ Ошибка';
-    } finally {
-        syncBtn.disabled = false;
+    } finally { syncBtn.disabled = false; }
+}
+
+async function requestLocation() {
+    try {
+        await db.ref('commands/get_location').set(true);
+        showNotification('Запрос отправлен', 'Ожидайте определение местоположения...');
+        setTimeout(() => {
+            const locationRef = db.ref('kids/child_device/location');
+            locationRef.once('value').then((snapshot) => {
+                const loc = snapshot.val();
+                if (loc && loc.lat && loc.lng) {
+                    if (marker) marker.setLatLng([loc.lat, loc.lng]);
+                    else marker = L.marker([loc.lat, loc.lng]).addTo(map);
+                    map.setView([loc.lat, loc.lng], 15);
+                    document.getElementById('locationInfo').innerHTML = `📍 ${loc.lat.toFixed(6)}, ${loc.lng.toFixed(6)}<br>🎯 ${Math.round(loc.accuracy || 50)} м<br>🕐 ${new Date(loc.time).toLocaleString()}`;
+                } else showNotification('Ошибка', 'Не удалось получить координаты');
+            });
+        }, 5000);
+    } catch (error) {
+        console.error('Ошибка:', error);
+        showNotification('Ошибка', 'Не удалось отправить запрос');
     }
 }
 
-// Real-time слушатели
 function setupRealtimeListeners() {
-    // Статус устройства
     db.ref('device/status').on('value', () => loadDeviceStatus());
-    
-    // Список заблокированных приложений
-    db.ref('device/suspended_apps').on('value', () => {
-        loadSuspendedApps();
-        loadApps();
-    });
-    
-    // Состояние блокировки
-    db.ref('commands/blocking_enabled').on('value', (snap) => {
-        currentBlockingState = snap.val() === true;
-        updateToggleButton();
-    });
-    
-    // Уведомления родителю
-    db.ref('parent_notifications').limitToLast(10).on('child_added', (snap) => {
-        const data = snap.val();
-        if (data && data.title) {
-            showNotification(data.title, data.body);
-        }
-    });
-    
-    // ===== НОВЫЕ СЛУШАТЕЛИ =====
-    
-    // Автоматическое обновление истории при добавлении новых событий
-    db.ref('kids/child_device/activity_history/all_events').limitToLast(1).on('child_added', () => {
-        // Определяем текущий активный период
-        const activeDays = document.querySelector('.history-period.active')?.dataset.days;
-        if (activeDays) {
-            loadHistory(parseInt(activeDays));
-        } else {
-            loadHistory(1); // По умолчанию за сегодня
-        }
-    });
-    
-    // Автоматическое обновление статистики при изменении
-    db.ref('device/usage_stats').on('value', () => {
-        loadStats();
-    });
-    
-    // Автоматическое обновление геолокации
-    db.ref('kids/child_device/location').on('value', () => {
-        loadLocation();
-    });
+    db.ref('device/suspended_apps').on('value', () => { loadSuspendedApps(); loadApps(); });
+    db.ref('commands/blocking_enabled').on('value', (snap) => { currentBlockingState = snap.val() === true; updateToggleButton(); });
 }
 
 function setupButtons() {
-    const toggleBlockingBtn = document.getElementById('toggleBlocking');
-    const syncBtn = document.getElementById('syncBtn');
-    const loadAppsBtn = document.getElementById('loadAppsBtn');
-    const toggleBlockSelectedBtn = document.getElementById('toggleBlockSelectedBtn');
-    const clearHistoryBtn = document.getElementById('clearHistoryBtn');
-    
-    if (toggleBlockingBtn) toggleBlockingBtn.onclick = () => toggleBlocking();
-    if (syncBtn) syncBtn.onclick = () => sync();
-    if (loadAppsBtn) loadAppsBtn.onclick = () => loadApps();
-    if (toggleBlockSelectedBtn) toggleBlockSelectedBtn.onclick = () => toggleBlockSelected();
-    if (clearHistoryBtn) clearHistoryBtn.onclick = () => clearHistory();
+    document.getElementById('toggleBlocking').onclick = () => toggleBlocking();
+    document.getElementById('syncBtn').onclick = () => sync();
+    document.getElementById('loadAppsBtn').onclick = () => loadApps();
+    document.getElementById('blockSelectedBtn').onclick = () => toggleBlockSelected();
+    document.getElementById('requestLocationBtn').onclick = () => requestLocation();
 }
