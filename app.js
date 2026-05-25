@@ -649,7 +649,7 @@ async function loadStats() {
     }
 }
 
-// Синхронизация
+// ========== ОБНОВЛЁННАЯ СИНХРОНИЗАЦИЯ ==========
 async function sync() {
     const syncBtn = document.getElementById('syncBtn');
     const syncStatus = document.getElementById('syncStatus');
@@ -664,6 +664,9 @@ async function sync() {
         await loadLocation();
         await loadApps();
         await loadStats();
+        
+        await sendNotification('🔄 СИНХРОНИЗАЦИЯ', 'Данные успешно обновлены');
+        
         syncStatus.textContent = '✅ Готово';
         setTimeout(() => { syncStatus.textContent = 'Готово'; }, 2000);
     } catch (error) {
