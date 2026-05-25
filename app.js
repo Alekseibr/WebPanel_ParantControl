@@ -550,51 +550,96 @@ async function toggleBlockSelected() {
 
 // История
 async function loadHistory(days) {
+     // Обновляем активную кнопку
+    document.querySelectorAll('.history-period').forEach(btn => {
+        btn.classList.remove('active');
+        if (btn.getAttribute('data-days') == days) {
+            btn.classList.add('active');
+        }
+    });
     const cutoff = Date.now() - days * 86400000;
     const container = document.getElementById('historyList');
-    container.innerHTML = '<div class="spinner"></div>';
+    
+    if (!container) {
+        console.error('Элемент historyList не найден');
+        return;
+    }
+    
+    container.innerHTML = '<div style="text-align: center; padding: 40px;">Загрузка...</div>';
     
     try {
-        const snapshot = await db.ref('kids/child_device/activity_history/all_events').once('value');
+        // Получаем данные из Firebase
+        const snapshot = await db.ref('kids/child_device/activity_history/all_events')
+            .orderByChild('device_time')
+            .startAt(cutoff)
+            .once('value');
         
         const events = [];
         snapshot.forEach(child => {
-            const val = child.val();
-            if (val.device_time && val.device_time >= cutoff) {
-                events.push({ id: child.key, ...val });
-            }
+            events.push(child.val());
         });
-        events.sort((a, b) => (b.device_time || 0) - (a.device_time || 0));
+        
+        console.log('Получено событий:', events.length); // Проверка в консоли
         
         if (events.length === 0) {
-            container.innerHTML = '<div style="text-align: center; padding: 40px; color: #666;">Нет событий</div>';
+            container.innerHTML = '<div style="text-align: center; padding: 40px; color: #666;">Нет событий за выбранный период</div>';
             return;
         }
         
-        container.innerHTML = events.map(event => {
+        // Сортируем по времени (новые сверху)
+        events.sort((a, b) => (b.device_time || 0) - (a.device_time || 0));
+        
+        // Отображаем события
+        let html = '';
+        for (const event of events) {
             let icon = '📋';
+            let typeClass = '';
+            
             switch (event.type) {
-                case 'app_launch': icon = '🚀'; break;
-                case 'status_change': icon = event.title?.includes('в сети') ? '🟢' : '🔴'; break;
-                case 'kiosk_start': icon = '🟢'; break;
-                case 'kiosk_exit': icon = '🔴'; break;
-                case 'location': icon = '📍'; break;
-                default: icon = '📌';
+                case 'app_launch':
+                    icon = '🚀';
+                    typeClass = 'history-app-launch';
+                    break;
+                case 'status_change':
+                    icon = event.title?.includes('в сети') ? '🟢' : '🔴';
+                    typeClass = 'history-status-change';
+                    break;
+                case 'kiosk_start':
+                    icon = '🟢';
+                    typeClass = 'history-kiosk-start';
+                    break;
+                case 'kiosk_exit':
+                    icon = '🔴';
+                    typeClass = 'history-kiosk-exit';
+                    break;
+                case 'location':
+                    icon = '📍';
+                    typeClass = 'history-location';
+                    break;
+                default:
+                    icon = '📌';
             }
-            return `
-                <div class="history-item">
+            
+            const eventDate = new Date(event.device_time);
+            const timeStr = eventDate.toLocaleString('ru-RU');
+            
+            html += `
+                <div class="history-item ${typeClass}">
                     <div class="history-icon">${icon}</div>
                     <div class="history-content">
                         <div class="history-title">${escapeHtml(event.title || 'Событие')}</div>
                         <div class="history-details">${escapeHtml(event.details || '')}</div>
                     </div>
-                    <div class="history-time">${formatTime(event.device_time)}</div>
+                    <div class="history-time">${timeStr}</div>
                 </div>
             `;
-        }).join('');
+        }
+        
+        container.innerHTML = html;
+        
     } catch (error) {
-        console.error('Ошибка:', error);
-        container.innerHTML = '<div style="text-align: center; padding: 40px; color: red;">Ошибка загрузки</div>';
+        console.error('Ошибка загрузки истории:', error);
+        container.innerHTML = '<div style="text-align: center; padding: 40px; color: red;">Ошибка загрузки истории</div>';
     }
 }
 
@@ -686,20 +731,50 @@ async function sync() {
 
 // Real-time слушатели
 function setupRealtimeListeners() {
+    // Статус устройства
     db.ref('device/status').on('value', () => loadDeviceStatus());
+    
+    // Список заблокированных приложений
     db.ref('device/suspended_apps').on('value', () => {
         loadSuspendedApps();
         loadApps();
     });
+    
+    // Состояние блокировки
     db.ref('commands/blocking_enabled').on('value', (snap) => {
         currentBlockingState = snap.val() === true;
         updateToggleButton();
     });
+    
+    // Уведомления родителю
     db.ref('parent_notifications').limitToLast(10).on('child_added', (snap) => {
         const data = snap.val();
         if (data && data.title) {
             showNotification(data.title, data.body);
         }
+    });
+    
+    // ===== НОВЫЕ СЛУШАТЕЛИ =====
+    
+    // Автоматическое обновление истории при добавлении новых событий
+    db.ref('kids/child_device/activity_history/all_events').limitToLast(1).on('child_added', () => {
+        // Определяем текущий активный период
+        const activeDays = document.querySelector('.history-period.active')?.dataset.days;
+        if (activeDays) {
+            loadHistory(parseInt(activeDays));
+        } else {
+            loadHistory(1); // По умолчанию за сегодня
+        }
+    });
+    
+    // Автоматическое обновление статистики при изменении
+    db.ref('device/usage_stats').on('value', () => {
+        loadStats();
+    });
+    
+    // Автоматическое обновление геолокации
+    db.ref('kids/child_device/location').on('value', () => {
+        loadLocation();
     });
 }
 
