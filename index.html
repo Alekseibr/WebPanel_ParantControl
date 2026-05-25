@@ -478,19 +478,16 @@
             </div>
 
             <div class="card">
-                <h3>📜 История активности</h3>
-                <div class="flex-between mb-2">
-                    <div>
-                        <button onclick="loadHistory(1)" class="btn btn-sm btn-outline">За сегодня</button>
-                        <button onclick="loadHistory(3)" class="btn btn-sm btn-outline">За 3 дня</button>
-                        <button onclick="loadHistory(7)" class="btn btn-sm btn-outline">За неделю</button>
-                    </div>
-                    <button id="clearHistoryBtn" class="btn btn-sm btn-danger">Очистить</button>
-                </div>
-                <div id="historyList" class="history-list">
-                    <div style="text-align: center; padding: 40px; color: #666;">Выберите период</div>
-                </div>
-            </div>
+    <h3>📜 История активности</h3>
+    <div style="display:flex; gap:10px; margin-bottom:10px;">
+        <button onclick="loadHistory(1)" class="history-period active" data-days="1" style="padding:8px 16px; background:#667eea; color:white; border:none; border-radius:5px; cursor:pointer;">За сегодня</button>
+        <button onclick="loadHistory(3)" class="history-period" data-days="3" style="padding:8px 16px; background:#667eea; color:white; border:none; border-radius:5px; cursor:pointer;">За 3 дня</button>
+        <button onclick="loadHistory(7)" class="history-period" data-days="7" style="padding:8px 16px; background:#667eea; color:white; border:none; border-radius:5px; cursor:pointer;">За неделю</button>
+    </div>
+    <div id="historyList" class="history-list">
+        <div style="text-align: center; padding: 40px; color: #666;">Выберите период</div>
+    </div>
+</div>
 
             <div class="card">
                 <h3>📊 Статистика использования</h3>
