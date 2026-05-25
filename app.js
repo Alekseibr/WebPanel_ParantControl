@@ -23,6 +23,9 @@ let appsList = [];
 let suspendedAppsList = [];
 let notificationTimeout = null;
 
+// Тема ntfy (ДОЛЖНА СОВПАДАТЬ С ТЕМОЙ В ПРИЛОЖЕНИИ НА ТЕЛЕФОНЕ)
+const NTFY_TOPIC = 'parental_control_secret_2026_oppo_k13';
+
 function escapeHtml(text) {
     if (!text) return '';
     const div = document.createElement('div');
@@ -59,7 +62,37 @@ function showNotification(title, body) {
     }, 5000);
 }
 
-// Аутентификация
+// ========== NTFY УВЕДОМЛЕНИЯ ==========
+async function sendNotification(title, message) {
+    // Преобразуем русский заголовок в английский для совместимости
+    let englishTitle = 'Parental Control';
+    if (title.includes('Включена') || title.includes('ВКЛЮЧЕНА')) englishTitle = 'BLOCKING ON';
+    else if (title.includes('Выключена') || title.includes('ВЫКЛЮЧЕНА')) englishTitle = 'BLOCKING OFF';
+    else if (title.includes('РАЗБЛОКИРОВАНЫ')) englishTitle = 'APPS UNBLOCKED';
+    else if (title.includes('ЗАБЛОКИРОВАНЫ')) englishTitle = 'APPS BLOCKED';
+    else if (title.includes('СИНХРОНИЗАЦИЯ')) englishTitle = 'SYNC COMPLETE';
+    
+    try {
+        const response = await fetch(`https://ntfy.sh/${NTFY_TOPIC}`, {
+            method: 'POST',
+            body: message,
+            headers: {
+                'Title': englishTitle,
+                'Priority': 'high',
+                'Tags': 'warning'
+            }
+        });
+        if (response.ok) {
+            console.log('✅ Уведомление отправлено:', englishTitle);
+        } else {
+            console.log('⚠️ Ошибка отправки, статус:', response.status);
+        }
+    } catch (error) {
+        console.error('❌ Ошибка отправки уведомления:', error);
+    }
+}
+
+// ========== АУТЕНТИФИКАЦИЯ ==========
 auth.onAuthStateChanged((user) => {
     if (user) {
         currentUser = user;
@@ -126,6 +159,7 @@ function addLogoutButton() {
     }
 }
 
+// ========== ОСНОВНЫЕ ФУНКЦИИ ==========
 function initApp() {
     initMap();
     loadBlockingState();
@@ -168,6 +202,10 @@ async function toggleBlocking() {
         currentBlockingState = newState;
         updateToggleButton();
         showNotification('Блокировка', newState ? 'Включена' : 'Выключена');
+        await sendNotification(
+            newState ? 'БЛОКИРОВКА ВКЛЮЧЕНА' : 'БЛОКИРОВКА ВЫКЛЮЧЕНА',
+            `Родитель ${newState ? 'заблокировал' : 'разблокировал'} устройство`
+        );
     } catch (error) {
         console.error('Ошибка:', error);
         showNotification('Ошибка', 'Не удалось изменить состояние');
@@ -294,6 +332,10 @@ async function toggleBlockSelected() {
         try {
             await db.ref('commands/unblock_apps').set(selected);
             showNotification('Успешно', `Разблокировано ${selected.length} приложений`);
+            await sendNotification(
+                'ПРИЛОЖЕНИЯ РАЗБЛОКИРОВАНЫ',
+                `Разблокировано ${selected.length} приложений`
+            );
             setTimeout(() => loadApps(), 1000);
         } catch (error) {
             console.error('Ошибка:', error);
@@ -304,6 +346,10 @@ async function toggleBlockSelected() {
         try {
             await db.ref('commands/block_apps').set(sanitized);
             showNotification('Успешно', `Заблокировано ${selected.length} приложений`);
+            await sendNotification(
+                'ПРИЛОЖЕНИЯ ЗАБЛОКИРОВАНЫ',
+                `Заблокировано ${selected.length} приложений`
+            );
             setTimeout(() => loadApps(), 1000);
         } catch (error) {
             console.error('Ошибка:', error);
@@ -314,7 +360,7 @@ async function toggleBlockSelected() {
 
 async function loadStats() {
     const tbody = document.getElementById('statsBody');
-    tbody.innerHTML = '<tr><td colspan="2" style="text-align:center;">Загрузка...</td></tr>';
+    tbody.innerHTML = '<td><td colspan="2" style="text-align:center;">Загрузка...</td></tr>';
     try {
         const appsSnapshot = await db.ref('device/apps_list').get();
         const allApps = appsSnapshot.val() || [];
@@ -357,6 +403,7 @@ async function sync() {
         await loadLocation();
         await loadApps();
         await loadStats();
+        await sendNotification('СИНХРОНИЗАЦИЯ', 'Данные успешно обновлены');
         syncStatus.textContent = '✅ Готово';
         setTimeout(() => { syncStatus.textContent = 'Готово'; }, 2000);
     } catch (error) {
@@ -369,6 +416,7 @@ async function requestLocation() {
     try {
         await db.ref('commands/get_location').set(true);
         showNotification('Запрос отправлен', 'Ожидайте определение местоположения...');
+        await sendNotification('📍 ЗАПРОС ГЕОЛОКАЦИИ', 'Родитель запросил местоположение');
         setTimeout(() => {
             const locationRef = db.ref('kids/child_device/location');
             locationRef.once('value').then((snapshot) => {
