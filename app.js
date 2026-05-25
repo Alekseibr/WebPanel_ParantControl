@@ -162,47 +162,30 @@ async function initFCM() {
     }
 }
 
-// ========== ФУНКЦИЯ ОТПРАВКИ FCM УВЕДОМЛЕНИЯ ==========
-async function sendFCMNotification(title, body, data = {}) {
-    if (!fcmToken) {
-        console.log('FCM токен не получен, уведомление не отправлено');
-        return;
-    }
-    
+// ========== ОТПРАВКА УВЕДОМЛЕНИЙ ЧЕРЕЗ NTFY (БЕЗ CORS) ==========
+// УНИКАЛЬНАЯ ТЕМА - ПРИДУМАЙ СВОЮ СЛОЖНУЮ СТРОКУ
+const NTFY_TOPIC = 'parental_control_secret_2026_oppo_k13';
+
+async function sendNotification(title, message) {
     try {
-        const response = await fetch('https://fcm.googleapis.com/fcm/send', {
+        const response = await fetch(`https://ntfy.sh/${NTFY_TOPIC}`, {
             method: 'POST',
+            body: message,
             headers: {
-                'Content-Type': 'application/json',
-                'Authorization': 'key=P621gghUekTYch5hQL7IXdRFKBk5-sifwsj-rfabEQ4'
-            },
-            body: JSON.stringify({
-                to: fcmToken,
-                notification: {
-                    title: title,
-                    body: body,
-                    sound: 'default'
-                },
-                data: {
-                    type: data.type || 'command',
-                    timestamp: Date.now().toString(),
-                    ...data
-                },
-                android: {
-                    priority: 'high'
-                },
-                apns: {
-                    headers: {
-                        'apns-priority': '10'
-                    }
-                }
-            })
+                'Title': title,
+                'Priority': 'high',
+                'Tags': 'warning',
+                'Click': 'https://alekseibr.github.io/WebPanel_ParantControl/'
+            }
         });
         
-        const result = await response.json();
-        console.log('FCM отправлено:', result);
+        if (response.ok) {
+            console.log('✅ Уведомление отправлено через ntfy');
+        } else {
+            console.log('⚠️ Ошибка отправки уведомления');
+        }
     } catch (error) {
-        console.error('Ошибка отправки FCM:', error);
+        console.error('❌ Ошибка отправки уведомления:', error);
     }
 }
 
@@ -347,11 +330,12 @@ async function toggleBlocking() {
         updateToggleButton();
         showNotification('Блокировка', newState ? 'Включена' : 'Выключена');
         
-        await sendFCMNotification(
-            '🔒 Режим блокировки',
-            newState ? 'Блокировка активирована' : 'Блокировка деактивирована',
-            { type: 'blocking_toggle', state: newState }
+        // Отправка через ntfy вместо FCM
+        await sendNotification(
+            newState ? '🔒 БЛОКИРОВКА ВКЛЮЧЕНА' : '🔓 БЛОКИРОВКА ВЫКЛЮЧЕНА',
+            `Родитель ${newState ? 'заблокировал' : 'разблокировал'} устройство`
         );
+        
     } catch (error) {
         console.error('Ошибка:', error);
         showNotification('Ошибка', 'Не удалось изменить состояние');
@@ -516,17 +500,19 @@ async function toggleBlockSelected() {
         return;
     }
     
+    // Проверяем, все ли выбранные приложения уже заблокированы
     const allSelectedBlocked = selected.every(pkg => suspendedAppsList.includes(pkg));
     
     if (allSelectedBlocked) {
+        // РАЗБЛОКИРОВАТЬ
         try {
             await db.ref('commands/unblock_apps').set(selected);
             showNotification('Успешно', `Разблокировано ${selected.length} приложений`);
             
-            await sendFCMNotification(
-                '🔓 Приложения разблокированы',
-                `Разблокировано ${selected.length} приложений`,
-                { type: 'unblock_apps', apps: selected.join(',') }
+            // Отправляем ntfy уведомление
+            await sendNotification(
+                '🔓 ПРИЛОЖЕНИЯ РАЗБЛОКИРОВАНЫ',
+                `Разблокировано ${selected.length} приложений\n${selected.join(', ').slice(0, 100)}`
             );
             
             setTimeout(() => loadApps(), 1000);
@@ -535,15 +521,16 @@ async function toggleBlockSelected() {
             showNotification('Ошибка', 'Не удалось разблокировать');
         }
     } else {
+        // ЗАБЛОКИРОВАТЬ
         const sanitized = selected.map(pkg => pkg.replace(/\./g, '_'));
         try {
             await db.ref('commands/block_apps').set(sanitized);
             showNotification('Успешно', `Заблокировано ${selected.length} приложений`);
             
-            await sendFCMNotification(
-                '🔒 Приложения заблокированы',
-                `Заблокировано ${selected.length} приложений`,
-                { type: 'block_apps', apps: selected.join(',') }
+            // Отправляем ntfy уведомление
+            await sendNotification(
+                '🔒 ПРИЛОЖЕНИЯ ЗАБЛОКИРОВАНЫ',
+                `Заблокировано ${selected.length} приложений\n${selected.join(', ').slice(0, 100)}`
             );
             
             setTimeout(() => loadApps(), 1000);
