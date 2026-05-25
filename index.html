@@ -42,6 +42,9 @@
         .app-package { font-size: 11px; color: #666; font-family: monospace; }
         #map { height: 350px; border-radius: 8px; margin-top: 10px; }
         .location-info { background: #e9ecef; padding: 12px; border-radius: 8px; margin-top: 12px; font-size: 13px; }
+        .stats-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+        .stats-table th, .stats-table td { padding: 10px; text-align: left; border-bottom: 1px solid #dee2e6; }
+        .stats-table th { background: #f8f9fa; font-weight: 600; color: #667eea; }
         .auth-container { display: flex; justify-content: center; align-items: center; min-height: 100vh; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }
         .auth-card { background: white; border-radius: 20px; padding: 40px; width: 100%; max-width: 450px; text-align: center; box-shadow: 0 20px 40px rgba(0,0,0,0.2); }
         .auth-card input { width: 100%; padding: 12px; margin: 8px 0; border: 1px solid #ddd; border-radius: 8px; }
@@ -120,6 +123,20 @@
                 <div id="map"></div>
                 <div id="locationInfo" class="location-info">Загрузка...</div>
                 <button id="requestLocationBtn" class="btn btn-sm" style="margin-top: 10px; width: auto;">📍 Запросить местоположение</button>
+            </div>
+
+            <div class="card">
+                <h3>📊 Статистика использования</h3>
+                <div class="flex-between mb-2">
+                    <span>Время в приложениях за 7 дней</span>
+                    <button onclick="loadStats()" class="btn btn-sm btn-outline">🔄 Обновить</button>
+                </div>
+                <div id="statsContainer">
+                    <table class="stats-table">
+                        <thead><tr><th>Приложение</th><th>Время (сек)</th></tr></thead>
+                        <tbody id="statsBody"><tr><td colspan="2" style="text-align:center;">Загрузка...</td></tr></tbody>
+                    </table>
+                </div>
             </div>
         </div>
     </div>
