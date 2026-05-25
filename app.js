@@ -35,6 +35,15 @@ function formatTime(timestamp) {
     return new Date(timestamp).toLocaleString('ru-RU');
 }
 
+function formatDuration(seconds) {
+    if (!seconds) return '0 сек';
+    if (seconds < 60) return `${Math.round(seconds)} сек`;
+    const minutes = Math.floor(seconds / 60);
+    if (minutes < 60) return `${minutes} мин ${Math.round(seconds % 60)} сек`;
+    const hours = Math.floor(minutes / 60);
+    return `${hours} ч ${minutes % 60} мин`;
+}
+
 function showNotification(title, body) {
     const existing = document.getElementById('inAppNotification');
     if (existing) existing.remove();
@@ -124,6 +133,7 @@ function initApp() {
     loadLocation();
     loadApps();
     loadSuspendedApps();
+    loadStats();
     setupRealtimeListeners();
     setupButtons();
 }
@@ -302,6 +312,39 @@ async function toggleBlockSelected() {
     }
 }
 
+async function loadStats() {
+    const tbody = document.getElementById('statsBody');
+    tbody.innerHTML = '<tr><td colspan="2" style="text-align:center;">Загрузка...</td></tr>';
+    try {
+        const appsSnapshot = await db.ref('device/apps_list').get();
+        const allApps = appsSnapshot.val() || [];
+        const userAppPackages = allApps.filter(a => !a.isSystem).map(a => a.packageName);
+        const snapshot = await db.ref('device/usage_stats').get();
+        let stats = snapshot.val() || {};
+        const restoredStats = {};
+        Object.keys(stats).forEach(key => {
+            const originalKey = key.replace(/_/g, '.');
+            restoredStats[originalKey] = stats[key];
+        });
+        const userStats = {};
+        for (const [pkg, time] of Object.entries(restoredStats)) {
+            if (userAppPackages.includes(pkg)) userStats[pkg] = time;
+        }
+        const entries = Object.entries(userStats);
+        if (entries.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="2" style="text-align:center;">Нет данных</td></tr>';
+            return;
+        }
+        entries.sort((a, b) => b[1] - a[1]);
+        tbody.innerHTML = entries.map(([pkg, time]) => `
+            <tr><td style="word-break:break-all;">${escapeHtml(pkg)}</td><td>${formatDuration(Math.round(time / 1000))}</td></tr>
+        `).join('');
+    } catch (error) {
+        console.error('Ошибка:', error);
+        tbody.innerHTML = '<tr><td colspan="2" style="text-align:center;">Ошибка загрузки</td></tr>';
+    }
+}
+
 async function sync() {
     const syncBtn = document.getElementById('syncBtn');
     const syncStatus = document.getElementById('syncStatus');
@@ -313,6 +356,7 @@ async function sync() {
         await loadDeviceStatus();
         await loadLocation();
         await loadApps();
+        await loadStats();
         syncStatus.textContent = '✅ Готово';
         setTimeout(() => { syncStatus.textContent = 'Готово'; }, 2000);
     } catch (error) {
