@@ -104,6 +104,7 @@ function updateToggleButton() {
     }
 }
 
+// Переключение тотального тумблера блокировки всего телефона
 async function toggleBlocking() {
     const newState = !currentBlockingState;
     try {
@@ -236,6 +237,7 @@ function updateToggleButtonState() {
         toggleBtn.style.background = '#dc3545';
     }
 }
+// Переключение точечной блокировки выбранных чекбоксами приложений
 async function toggleBlockSelected() {
     const selected = Array.from(document.querySelectorAll('#appsContainer input:checked')).map(cb => cb.value);
     if (selected.length === 0) {
@@ -246,19 +248,22 @@ async function toggleBlockSelected() {
     const allSelectedBlocked = selected.every(pkg => suspendedAppsList.includes(pkg));
     
     try {
+        let newBlockList = [];
         if (allSelectedBlocked) {
-            // Разблокировать выбранные: добавляем пакеты в список исключений
-            await db.ref('settings/exempt_apps').set(selected);
-            showNotification('Успешно', `Запрос на разблокировку ${selected.length} приложений отправлен`);
+            // Если они заблокированы — убираем их из списка блокировок (размораживаем)
+            newBlockList = suspendedAppsList.filter(pkg => !selected.includes(pkg));
+            showNotification('Успешно', `Разблокировано ${selected.length} приложений`);
         } else {
-            // Заблокировать выбранные: очищаем список исключений, заставляя приложение заморозить остальное
-            // Отправляем пакеты в чистом виде (с точками), без замены на подчеркивания
-            await db.ref('settings/exempt_apps').set([]);
-            showNotification('Успешно', `Запрос на блокировку ${selected.length} приложений отправлен`);
+            // Если не заблокированы — объединяем текущие блокировки с новыми
+            newBlockList = Array.from(new Set([...suspendedAppsList, ...selected]));
+            showNotification('Успешно', `Заблокировано ${selected.length} приложений`);
         }
-        setTimeout(() => loadApps(), 1500);
+        
+        // Отправляем массив пакетов (с точками!) в исходный рабочий узел block_apps
+        await db.ref('commands/block_apps').set(newBlockList);
+        setTimeout(() => loadApps(), 1000);
     } catch (error) {
-        console.error('Ошибка отправки команды точечной блокировки:', error);
+        console.error('Ошибка точечной блокировки:', error);
         showNotification('Ошибка', 'Не удалось применить конфигурацию');
     }
 }
