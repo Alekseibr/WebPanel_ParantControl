@@ -125,16 +125,30 @@
                 <button id="requestLocationBtn" class="btn btn-sm" style="margin-top: 10px; width: auto;">📍 Запросить местоположение</button>
             </div>
 
+             <!-- 🚀 ИСПРАВЛЕНО И СИНХРОНИЗИРОВАНО С APP.JS -->
             <div class="card">
-                <h3>📊 Статистика использования</h3>
+                <h3>📊 Статистика использования за сегодня</h3>
                 <div class="flex-between mb-2">
-                    <span>Время в приложениях за 7 дней</span>
-                    <button onclick="loadStats()" class="btn btn-sm btn-outline">🔄 Обновить</button>
+                    <span style="font-size: 14px; opacity: 0.7;">Актуальное экранное время в минутах</span>
+                    <!-- Кнопка теперь вызывает метод requestStatsRefresh(), который экстренно будит суточный трекер на телефоне -->
+                    <button onclick="requestStatsRefresh()" class="btn btn-sm btn-outline">🔄 Запросить обновление</button>
                 </div>
                 <div id="statsContainer">
-                    <table class="stats-table">
-                        <thead><tr><th>Приложение</th><th>Время (сек)</th></tr></thead>
-                        <tbody id="statsBody"><tr><td colspan="2" style="text-align:center;">Загрузка...</td></tr></tbody>
+                    <table class="stats-table" style="width:100%; border-collapse:collapse;">
+                        <thead>
+                            <tr style="text-align:left; border-bottom:1px solid rgba(255,255,255,0.1);">
+                                <th style="padding:8px;">Приложение</th>
+                                <th style="padding:8px; text-align:right;">Время работы</th>
+                            </tr>
+                        </thead>
+                        <!-- ID statsBody на месте, app.js будет отрисовывать строки сюда -->
+                        <tbody id="statsBody">
+                            <tr>
+                                <td colspan="2" style="text-align:center; padding:15px; opacity:0.5;">
+                                    Нажмите кнопку для загрузки актуальных данных...
+                                </td>
+                            </tr>
+                        </tbody>
                     </table>
                 </div>
             </div>
