@@ -78,9 +78,19 @@ function initMap() {
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 }
 
+// Чтение списка заблокированных приложений из базы
 async function loadSuspendedApps() {
     const snapshot = await db.ref('device/suspended_apps').get();
-    suspendedAppsList = snapshot.val() || [];
+    const data = snapshot.val() || [];
+    
+    // Если в базе лежит массив строк, берем его, если объект/карта — извлекаем ключи с деэкранированием
+    if (Array.isArray(data)) {
+        suspendedAppsList = data;
+    } else if (typeof data === 'object') {
+        suspendedAppsList = Object.keys(data).map(key => key.replace(/_/g, '.'));
+    } else {
+        suspendedAppsList = [];
+    }
     updateToggleButtonState();
 }
 
@@ -201,11 +211,11 @@ async function loadApps() {
     }
 }
 
-// 🚀 ИСПРАВЛЕНО: Value чекбокса хранит оригинальное имя пакета (с точками!)
+// Отрисовка списка приложений на экране родителя
 function renderAppGroup(apps) {
     return apps.map(app => {
         const isBlocked = suspendedAppsList.includes(app.packageName);
-        const inputId = `app_${app.packageName.replace(/\./g, '_')}`; // Только для ID меняем точки на _
+        const inputId = `app_${app.packageName.replace(/\./g, '_')}`;
         return `
             <div class="app-item ${app.isSystem ? 'system' : ''}">
                 <input type="checkbox" value="${escapeHtml(app.packageName)}" id="${inputId}" ${isBlocked ? 'checked' : ''}>
@@ -242,8 +252,7 @@ function updateToggleButtonState() {
     }
 }
 
-// Переключение точечной блокировки выбранных чекбоксами приложений
-// 🚀 ИСПРАВЛЕНО: Отправляем чистый массив строк с точками. Никаких замен символов!
+// 🚀 СИНХРОНИЗИРОВАНО: Точечная блокировка через существующий триггер request_apps
 async function toggleBlockSelected() {
     const selected = Array.from(document.querySelectorAll('#appsContainer input:checked')).map(cb => cb.value);
     if (selected.length === 0) {
@@ -256,18 +265,23 @@ async function toggleBlockSelected() {
     try {
         let newBlockList = [];
         if (allSelectedBlocked) {
+            // Разблокировать выбранные
             newBlockList = suspendedAppsList.filter(pkg => !selected.includes(pkg));
-            showNotification('Успешно', `Запрос на разблокировку отправлен`);
+            showNotification('Успешно', 'Запрос на разблокировку отправлен...');
         } else {
+            // Заблокировать выбранные
             newBlockList = Array.from(new Set([...suspendedAppsList, ...selected]));
-            showNotification('Успешно', `Запрос на блокировку отправлен`);
+            showNotification('Успешно', 'Запрос на блокировку отправлен...');
         }
         
-        // Стреляем оригинальным массивом в узел block_apps
-        await db.ref('commands/block_apps').set(newBlockList);
+        // 1. Сохраняем итоговый массив блокировок напрямую в системную папку
+        await db.ref('device/suspended_apps').set(newBlockList);
         
-        // 🚀 ИСПРАВЛЕНО: Больше НЕ вызываем loadApps() вручную, ломая рендеринг! 
-        // База сама обновит чекбоксы через реактивный слушатель ниже.
+        // 2. ⚡ Пинаем телефон через ПЕРЕХВАТЧИК №3, заставляя его мгновенно применить эту конфигурацию!
+        await db.ref('commands/request_apps').set(true);
+        
+        // Перерисовываем UI через секунду
+        setTimeout(() => loadApps(), 1500);
     } catch (error) {
         console.error('Ошибка точечной блокировки:', error);
         showNotification('Ошибка', 'Не удалось применить конфигурацию');
@@ -354,15 +368,13 @@ async function requestLocation() {
     }
 }
 
-// 🚀 ИСПРАВЛЕНО: Убрали циклическое зацикливание вызовов страниц
+// Настройка живых слушателей
 function setupRealtimeListeners() {
     db.ref('device/status').on('value', () => loadDeviceStatus());
     
-    // При изменении структуры на телефоне просто тихо обновляем внутренний массив,
-    // но НЕ стираем и НЕ перерисовываем страницу у родителя перед носом!
-    db.ref('device/suspended_apps').on('value', (snapshot) => {
-        suspendedAppsList = snapshot.val() || [];
-        updateToggleButtonState();
+    // Тихо обновляем чекбоксы при ответе от телефона, не ломая верстку страницы
+    db.ref('device/suspended_apps').on('value', () => {
+        loadSuspendedApps();
     });
     
     db.ref('commands/blocking_enabled').on('value', (snap) => { 
