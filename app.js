@@ -23,9 +23,6 @@ let appsList = [];
 let suspendedAppsList = [];
 let notificationTimeout = null;
 
-// Тема ntfy (ДОЛЖНА СОВПАДАТЬ С ТЕМОЙ В ПРИЛОЖЕНИИ НА ТЕЛЕФОНЕ)
-const NTFY_TOPIC = 'parental_control_secret_2026_oppo_k13';
-
 function escapeHtml(text) {
     if (!text) return '';
     const div = document.createElement('div');
@@ -62,104 +59,7 @@ function showNotification(title, body) {
     }, 5000);
 }
 
-// ========== NTFY УВЕДОМЛЕНИЯ ==========
-async function sendNotification(title, message) {
-    // Преобразуем русский заголовок в английский для совместимости
-    let englishTitle = 'Parental Control';
-    if (title.includes('Включена') || title.includes('ВКЛЮЧЕНА')) englishTitle = 'BLOCKING ON';
-    else if (title.includes('Выключена') || title.includes('ВЫКЛЮЧЕНА')) englishTitle = 'BLOCKING OFF';
-    else if (title.includes('РАЗБЛОКИРОВАНЫ')) englishTitle = 'APPS UNBLOCKED';
-    else if (title.includes('ЗАБЛОКИРОВАНЫ')) englishTitle = 'APPS BLOCKED';
-    else if (title.includes('СИНХРОНИЗАЦИЯ')) englishTitle = 'SYNC COMPLETE';
-    
-    try {
-        const response = await fetch(`https://ntfy.sh/${NTFY_TOPIC}`, {
-            method: 'POST',
-            body: message,
-            headers: {
-                'Title': englishTitle,
-                'Priority': 'high',
-                'Tags': 'warning'
-            }
-        });
-        if (response.ok) {
-            console.log('✅ Уведомление отправлено:', englishTitle);
-        } else {
-            console.log('⚠️ Ошибка отправки, статус:', response.status);
-        }
-    } catch (error) {
-        console.error('❌ Ошибка отправки уведомления:', error);
-    }
-}
-
-// ========== АУТЕНТИФИКАЦИЯ ==========
-auth.onAuthStateChanged((user) => {
-    if (user) {
-        currentUser = user;
-        document.getElementById('authContainer').style.display = 'none';
-        document.getElementById('appContainer').style.display = 'block';
-        const email = user.email;
-        let parentName = 'Родитель';
-        if (email) parentName = email.split('@')[0];
-        document.getElementById('welcomeMessage').innerHTML = `Добро пожаловать, ${parentName}! 👋`;
-        initApp();
-        addLogoutButton();
-    } else {
-        document.getElementById('authContainer').style.display = 'flex';
-        document.getElementById('appContainer').style.display = 'none';
-    }
-});
-
-document.addEventListener('DOMContentLoaded', () => {
-    const loginBtn = document.getElementById('loginButton');
-    const loginEmail = document.getElementById('loginEmail');
-    const loginPassword = document.getElementById('loginPassword');
-    const loginError = document.getElementById('loginError');
-    if (loginBtn) {
-        loginBtn.addEventListener('click', async () => {
-            const email = loginEmail.value.trim();
-            const password = loginPassword.value.trim();
-            if (!email || !password) {
-                loginError.textContent = 'Введите email и пароль';
-                loginError.style.display = 'block';
-                return;
-            }
-            loginError.style.display = 'none';
-            loginBtn.disabled = true;
-            loginBtn.textContent = 'Вход...';
-            try {
-                await auth.signInWithEmailAndPassword(email, password);
-            } catch (error) {
-                let errorMessage = 'Ошибка входа';
-                if (error.code === 'auth/user-not-found') errorMessage = 'Пользователь не найден';
-                else if (error.code === 'auth/wrong-password') errorMessage = 'Неверный пароль';
-                else if (error.code === 'auth/invalid-email') errorMessage = 'Неверный формат email';
-                loginError.textContent = errorMessage;
-                loginError.style.display = 'block';
-                loginBtn.disabled = false;
-                loginBtn.textContent = 'Войти';
-            }
-        });
-        loginPassword.addEventListener('keypress', (e) => { if (e.key === 'Enter') loginBtn.click(); });
-    }
-});
-
-function logout() { auth.signOut(); location.reload(); }
-
-function addLogoutButton() {
-    const header = document.querySelector('.header');
-    if (header && !document.getElementById('logoutBtn')) {
-        const logoutBtn = document.createElement('button');
-        logoutBtn.id = 'logoutBtn';
-        logoutBtn.textContent = '🚪 Выйти';
-        logoutBtn.style.cssText = 'position: absolute; top: 20px; right: 20px; background: rgba(255,255,255,0.2); border: none; padding: 8px 16px; border-radius: 20px; color: white; cursor: pointer;';
-        logoutBtn.onclick = () => logout();
-        header.style.position = 'relative';
-        header.appendChild(logoutBtn);
-    }
-}
-
-// ========== ОСНОВНЫЕ ФУНКЦИИ ==========
+// ========== ОСНОВНЫЕ ФУНКЦИИ И СИНХРОНИЗАЦИЯ ==========
 function initApp() {
     initMap();
     loadBlockingState();
@@ -179,7 +79,13 @@ function initMap() {
 
 async function loadSuspendedApps() {
     const snapshot = await db.ref('device/suspended_apps').get();
-    suspendedAppsList = snapshot.val() || [];
+    const rawData = snapshot.val() || {};
+    
+    if (typeof rawData === 'object' && !Array.isArray(rawData)) {
+        suspendedAppsList = Object.keys(rawData).map(key => key.replace(/_/g, '.'));
+    } else {
+        suspendedAppsList = Array.isArray(rawData) ? rawData : [];
+    }
     updateToggleButtonState();
 }
 
@@ -191,8 +97,10 @@ async function loadBlockingState() {
 
 function updateToggleButton() {
     const toggle = document.getElementById('toggleBlocking');
-    if (currentBlockingState) toggle.classList.add('active');
-    else toggle.classList.remove('active');
+    if (toggle) {
+        if (currentBlockingState) toggle.classList.add('active');
+        else toggle.classList.remove('active');
+    }
 }
 
 async function toggleBlocking() {
@@ -202,12 +110,8 @@ async function toggleBlocking() {
         currentBlockingState = newState;
         updateToggleButton();
         showNotification('Блокировка', newState ? 'Включена' : 'Выключена');
-        await sendNotification(
-            newState ? 'БЛОКИРОВКА ВКЛЮЧЕНА' : 'БЛОКИРОВКА ВЫКЛЮЧЕНА',
-            `Родитель ${newState ? 'заблокировал' : 'разблокировал'} устройство`
-        );
     } catch (error) {
-        console.error('Ошибка:', error);
+        console.error('Ошибка изменения блокировки:', error);
         showNotification('Ошибка', 'Не удалось изменить состояние');
     }
 }
@@ -221,15 +125,18 @@ async function loadDeviceStatus() {
     const statusDiv = document.getElementById('deviceStatusCard');
     const batteryText = document.getElementById('batteryText');
     const lastSeenText = document.getElementById('lastSeenText');
-    if (isRecent && data.status === 'online') {
-        statusDiv.className = 'status status-online';
-        statusDiv.innerHTML = '<span class="status-badge online"></span> В сети';
-    } else {
-        statusDiv.className = 'status status-offline';
-        statusDiv.innerHTML = '<span class="status-badge offline"></span> Не в сети';
+    
+    if (statusDiv) {
+        if (isRecent && data.status === 'online') {
+            statusDiv.className = 'status status-online';
+            statusDiv.innerHTML = '<span class="status-badge online"></span> В сети';
+        } else {
+            statusDiv.className = 'status status-offline';
+            statusDiv.innerHTML = '<span class="status-badge offline"></span> Не в сети';
+        }
     }
-    batteryText.textContent = data.battery ? `${data.battery}%` : '-';
-    lastSeenText.textContent = formatTime(data.lastSeen);
+    if (batteryText) batteryText.textContent = data.battery ? `${data.battery}%` : '-';
+    if (lastSeenText) lastSeenText.textContent = formatTime(data.lastSeen);
 }
 
 function loadLocation() {
@@ -247,17 +154,22 @@ function loadLocation() {
                 fillColor: '#007bff',
                 fillOpacity: 0.1
             }).addTo(map);
-            document.getElementById('locationInfo').innerHTML = `
-                📍 ${loc.lat.toFixed(6)}, ${loc.lng.toFixed(6)}<br>
-                🎯 Точность: ${Math.round(loc.accuracy || 50)} м<br>
-                🕐 ${new Date(loc.time).toLocaleString()}
-            `;
+            
+            const locInfo = document.getElementById('locationInfo');
+            if (locInfo) {
+                locInfo.innerHTML = `
+                    📍 ${loc.lat.toFixed(6)}, ${loc.lng.toFixed(6)}<br>
+                    🎯 Точность: ${Math.round(loc.accuracy || 50)} м<br>
+                    🕐 ${new Date(loc.time).toLocaleString()}
+                `;
+            }
         }
     });
 }
 
 async function loadApps() {
     const container = document.getElementById('appsContainer');
+    if (!container) return;
     container.innerHTML = '<div class="spinner"></div>';
     try {
         await db.ref('commands/request_apps').set(true);
@@ -280,7 +192,7 @@ async function loadApps() {
         container.innerHTML = html;
         document.querySelectorAll('#appsContainer input').forEach(cb => cb.addEventListener('change', () => updateToggleButtonState()));
     } catch (error) {
-        console.error('Ошибка:', error);
+        console.error('Ошибка загрузки приложений:', error);
         container.innerHTML = '<div style="text-align:center; padding:20px; color:red;">Ошибка</div>';
     }
 }
@@ -288,10 +200,11 @@ async function loadApps() {
 function renderAppGroup(apps) {
     return apps.map(app => {
         const isBlocked = suspendedAppsList.includes(app.packageName);
+        const inputId = `app_${app.packageName.replace(/\./g, '_')}`;
         return `
             <div class="app-item ${app.isSystem ? 'system' : ''}">
-                <input type="checkbox" value="${escapeHtml(app.packageName)}" id="app_${app.packageName.replace(/\./g, '_')}">
-                <label for="app_${app.packageName.replace(/\./g, '_')}">
+                <input type="checkbox" value="${escapeHtml(app.packageName)}" id="${inputId}" ${isBlocked ? 'checked' : ''}>
+                <label for="${inputId}">
                     <div class="app-name">${escapeHtml(app.name)}${isBlocked ? ' <span style="color:#dc3545;">(заблокировано)</span>' : ''}</div>
                     <div class="app-package">${escapeHtml(app.packageName)}</div>
                 </label>
@@ -301,8 +214,9 @@ function renderAppGroup(apps) {
 }
 
 function updateToggleButtonState() {
-    const toggleBtn = document.getElementById('toggleBlockSelectedBtn');
+    const toggleBtn = document.getElementById('blockSelectedBtn') || document.getElementById('toggleBlockSelectedBtn');
     if (!toggleBtn) return;
+    
     const selected = Array.from(document.querySelectorAll('#appsContainer input:checked')).map(cb => cb.value);
     if (selected.length === 0) {
         toggleBtn.textContent = '🔒 Выберите приложения';
@@ -311,6 +225,7 @@ function updateToggleButtonState() {
         return;
     }
     toggleBtn.disabled = false;
+    
     const allSelectedBlocked = selected.every(pkg => suspendedAppsList.includes(pkg));
     if (allSelectedBlocked) {
         toggleBtn.textContent = '🔓 Разблокировать выбранные';
@@ -327,111 +242,90 @@ async function toggleBlockSelected() {
         showNotification('Предупреждение', 'Выберите приложения');
         return;
     }
+    
     const allSelectedBlocked = selected.every(pkg => suspendedAppsList.includes(pkg));
-    if (allSelectedBlocked) {
-        try {
-            await db.ref('commands/unblock_apps').set(selected);
-            showNotification('Успешно', `Разблокировано ${selected.length} приложений`);
-            await sendNotification(
-                'ПРИЛОЖЕНИЯ РАЗБЛОКИРОВАНЫ',
-                `Разблокировано ${selected.length} приложений`
-            );
-            setTimeout(() => loadApps(), 1000);
-        } catch (error) {
-            console.error('Ошибка:', error);
-            showNotification('Ошибка', 'Не удалось разблокировать');
+    
+    try {
+        if (allSelectedBlocked) {
+            await db.ref('settings/exempt_apps').set(selected);
+            showNotification('Успешно', `Запрос на разблокировку ${selected.length} приложений отправлен`);
+        } else {
+            await db.ref('settings/exempt_apps').set([]);
+            showNotification('Успешно', `Запрос на блокировку ${selected.length} приложений отправлен`);
         }
-    } else {
-        const sanitized = selected.map(pkg => pkg.replace(/\./g, '_'));
-        try {
-            await db.ref('commands/block_apps').set(sanitized);
-            showNotification('Успешно', `Заблокировано ${selected.length} приложений`);
-            await sendNotification(
-                'ПРИЛОЖЕНИЯ ЗАБЛОКИРОВАНЫ',
-                `Заблокировано ${selected.length} приложений`
-            );
-            setTimeout(() => loadApps(), 1000);
-        } catch (error) {
-            console.error('Ошибка:', error);
-            showNotification('Ошибка', 'Не удалось заблокировать');
-        }
+        setTimeout(() => loadApps(), 1500);
+    } catch (error) {
+        console.error('Ошибка отправки команды точечной блокировки:', error);
+        showNotification('Ошибка', 'Не удалось применить конфигурацию');
     }
 }
 
 async function loadStats() {
     const tbody = document.getElementById('statsBody');
-    tbody.innerHTML = '<td><td colspan="2" style="text-align:center;">Загрузка...</td></tr>';
+    if (!tbody) return;
+    tbody.innerHTML = '<tr><td colspan="2" style="text-align:center;">Загрузка статистики...</td></tr>';
+    
     try {
-        const appsSnapshot = await db.ref('device/apps_list').get();
-        const allApps = appsSnapshot.val() || [];
-        const userAppPackages = allApps.filter(a => !a.isSystem).map(a => a.packageName);
-        const snapshot = await db.ref('device/usage_stats').get();
-        let stats = snapshot.val() || {};
-        const restoredStats = {};
-        Object.keys(stats).forEach(key => {
-            const originalKey = key.replace(/_/g, '.');
-            restoredStats[originalKey] = stats[key];
+        // Подписываемся на обновленный нами узел суточных логов в реальном времени
+        db.ref('device/usage_stats').on('value', (snapshot) => {
+            const data = snapshot.val() || {};
+            const stats = data.installed_apps || {};
+            
+            const entries = Object.entries(stats);
+            if (entries.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="2" style="text-align:center;">Экранное время за сегодня отсутствует</td></tr>';
+                return;
+            }
+            
+            // Сортируем массив по минутам (от большего к меньшему)
+            entries.sort((a, b) => (b[1].timeInMinutes || 0) - (a[1].timeInMinutes || 0));
+            
+            // Выводим в таблицу НАЗВАНИЕ приложения и чистые минуты за сегодня
+            tbody.innerHTML = entries.map(([_, appObject]) => `
+                <tr>
+                    <td style="font-weight:500;">📊 ${escapeHtml(appObject.name)}</td>
+                    <td style="font-weight:bold; color:#007bff; text-align:right;">${appObject.timeInMinutes} мин.</td>
+                </tr>
+            `).join('');
         });
-        const userStats = {};
-        for (const [pkg, time] of Object.entries(restoredStats)) {
-            if (userAppPackages.includes(pkg)) userStats[pkg] = time;
-        }
-        const entries = Object.entries(userStats);
-        if (entries.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="2" style="text-align:center;">Нет данных</td></tr>';
-            return;
-        }
-        entries.sort((a, b) => b[1] - a[1]);
-        tbody.innerHTML = entries.map(([pkg, time]) => `
-            <tr><td style="word-break:break-all;">${escapeHtml(pkg)}</td><td>${formatDuration(Math.round(time / 1000))}</td></tr>
-        `).join('');
     } catch (error) {
-        console.error('Ошибка:', error);
-        tbody.innerHTML = '<tr><td colspan="2" style="text-align:center;">Ошибка загрузки</td></tr>';
+        console.error('Критическая ошибка загрузки статистики в таблицу:', error);
+        tbody.innerHTML = '<tr><td colspan="2" style="text-align:center; color:red;">Ошибка загрузки данных</td></tr>';
     }
 }
 
 async function sync() {
     const syncBtn = document.getElementById('syncBtn');
     const syncStatus = document.getElementById('syncStatus');
-    syncBtn.disabled = true;
-    syncStatus.textContent = 'Синхронизация...';
+    if (syncBtn) syncBtn.disabled = true;
+    if (syncStatus) syncStatus.textContent = 'Синхронизация...';
+    
     try {
-        await db.ref('commands/sync_request').set(true);
-        await new Promise(resolve => setTimeout(resolve, 2000));
+        // Посылаем триггеры экстренного обновления во все фоновые службы Android
+        await db.ref('commands/request_stats').set(true);
+        await db.ref('commands/request_apps').set(true);
+        await db.ref('commands/request_location').set(true);
+        
+        await new Promise(resolve => setTimeout(resolve, 2500));
         await loadDeviceStatus();
-        await loadLocation();
         await loadApps();
-        await loadStats();
-        await sendNotification('СИНХРОНИЗАЦИЯ', 'Данные успешно обновлены');
-        syncStatus.textContent = '✅ Готово';
-        setTimeout(() => { syncStatus.textContent = 'Готово'; }, 2000);
+        
+        if (syncStatus) syncStatus.textContent = '✅ Готово';
+        setTimeout(() => { if (syncStatus) syncStatus.textContent = 'Готово'; }, 2000);
     } catch (error) {
-        console.error('Ошибка:', error);
-        syncStatus.textContent = '❌ Ошибка';
-    } finally { syncBtn.disabled = false; }
+        console.error('Ошибка глобальной синхронизации панели:', error);
+        if (syncStatus) syncStatus.textContent = '❌ Ошибка';
+    } finally { if (syncBtn) syncBtn.disabled = false; }
 }
 
 async function requestLocation() {
     try {
-        await db.ref('commands/get_location').set(true);
-        showNotification('Запрос отправлен', 'Ожидайте определение местоположения...');
-        await sendNotification('📍 ЗАПРОС ГЕОЛОКАЦИИ', 'Родитель запросил местоположение');
-        setTimeout(() => {
-            const locationRef = db.ref('kids/child_device/location');
-            locationRef.once('value').then((snapshot) => {
-                const loc = snapshot.val();
-                if (loc && loc.lat && loc.lng) {
-                    if (marker) marker.setLatLng([loc.lat, loc.lng]);
-                    else marker = L.marker([loc.lat, loc.lng]).addTo(map);
-                    map.setView([loc.lat, loc.lng], 15);
-                    document.getElementById('locationInfo').innerHTML = `📍 ${loc.lat.toFixed(6)}, ${loc.lng.toFixed(6)}<br>🎯 ${Math.round(loc.accuracy || 50)} м<br>🕐 ${new Date(loc.time).toLocaleString()}`;
-                } else showNotification('Ошибка', 'Не удалось получить координаты');
-            });
-        }, 5000);
+        // Путь команды изменен на правильный commands/request_location (совпадает с Android)
+        await db.ref('commands/request_location').set(true);
+        showNotification('Запрос отправлен', 'Ожидайте точечное определение координат чипом GPS...');
     } catch (error) {
-        console.error('Ошибка:', error);
-        showNotification('Ошибка', 'Не удалось отправить запрос');
+        console.error('Ошибка отправки интента геолокации:', error);
+        showNotification('Ошибка', 'Не удалось связаться с датчиком');
     }
 }
 
@@ -442,9 +336,121 @@ function setupRealtimeListeners() {
 }
 
 function setupButtons() {
-    document.getElementById('toggleBlocking').onclick = () => toggleBlocking();
-    document.getElementById('syncBtn').onclick = () => sync();
-    document.getElementById('loadAppsBtn').onclick = () => loadApps();
-    document.getElementById('blockSelectedBtn').onclick = () => toggleBlockSelected();
-    document.getElementById('requestLocationBtn').onclick = () => requestLocation();
+    const toggleBtn = document.getElementById('toggleBlocking');
+    const syncBtn = document.getElementById('syncBtn');
+    const loadAppsBtn = document.getElementById('loadAppsBtn');
+    const blockSelectedBtn = document.getElementById('blockSelectedBtn') || document.getElementById('toggleBlockSelectedBtn');
+    const requestLocationBtn = document.getElementById('requestLocationBtn');
+
+    if (toggleBtn) toggleBtn.onclick = () => toggleBlocking();
+    if (syncBtn) syncBtn.onclick = () => sync();
+    if (loadAppsBtn) loadAppsBtn.onclick = () => loadApps();
+    if (blockSelectedBtn) blockSelectedBtn.onclick = () => toggleBlockSelected();
+    if (requestLocationBtn) requestLocationBtn.onclick = () => requestLocation();
+}
+
+// ========== АУТЕНТИФИКАЦИЯ И ИНИЦИАЛИЗАЦИЯ ИНТЕРФЕЙСА ==========
+auth.onAuthStateChanged((user) => {
+    if (user) {
+        currentUser = user;
+        
+        // Переключаем видимость контейнеров панели
+        const authContainer = document.getElementById('authContainer');
+        const appContainer = document.getElementById('appContainer');
+        const welcomeMessage = document.getElementById('welcomeMessage');
+        
+        if (authContainer) authContainer.style.display = 'none';
+        if (appContainer) appContainer.style.display = 'block';
+        
+        const email = user.email;
+        let parentName = 'Родитель';
+        if (email) parentName = email.split('@')[0];
+        
+        if (welcomeMessage) {
+            welcomeMessage.innerHTML = `Добро пожаловать, ${parentName}! 👋`;
+        }
+        
+        // Запускаем инициализацию всех фоновых слушателей Firebase
+        initApp();
+        addLogoutButton();
+    } else {
+        const authContainer = document.getElementById('authContainer');
+        const appContainer = document.getElementById('appContainer');
+        
+        if (authContainer) authContainer.style.display = 'flex';
+        if (appContainer) appContainer.style.display = 'none';
+    }
+});
+
+// Слушатель загрузки DOM дерева для привязки формы входа
+document.addEventListener('DOMContentLoaded', () => {
+    const loginBtn = document.getElementById('loginButton');
+    const loginEmail = document.getElementById('loginEmail');
+    const loginPassword = document.getElementById('loginPassword');
+    const loginError = document.getElementById('loginError');
+    
+    if (loginBtn && loginEmail && loginPassword && loginError) {
+        loginBtn.addEventListener('click', async () => {
+            const email = loginEmail.value.trim();
+            const password = loginPassword.value.trim();
+            
+            if (!email || !password) {
+                loginError.textContent = 'Введите email и пароль';
+                loginError.style.display = 'block';
+                return;
+            }
+            
+            loginError.style.display = 'none';
+            loginBtn.disabled = true;
+            loginBtn.textContent = 'Вход...';
+            
+            try {
+                // Выполняем официальный вход в Firebase для родителей
+                await auth.signInWithEmailAndPassword(email, password);
+            } catch (error) {
+                let errorMessage = 'Ошибка входа';
+                if (error.code === 'auth/user-not-found') errorMessage = 'Пользователь не найден';
+                else if (error.code === 'auth/wrong-password') errorMessage = 'Неверный пароль';
+                else if (error.code === 'auth/invalid-email') errorMessage = 'Неверный формат email';
+                
+                loginError.textContent = errorMessage;
+                loginError.style.display = 'block';
+                loginBtn.disabled = false;
+                loginBtn.textContent = 'Войти';
+            }
+        });
+        
+        // Позволяем входить по нажатию клавиши Enter в поле пароля
+        loginPassword.addEventListener('keypress', (e) => { 
+            if (e.key === 'Enter') loginBtn.click(); 
+        });
+    }
+});
+
+// Функция безопасного выхода из панели администратора
+function logout() { 
+    auth.signOut().then(() => {
+        location.reload(); 
+    }).catch((error) => {
+        console.error("Ошибка при выходе:", error);
+    });
+}
+
+// Динамическое добавление стильной кнопки выхода в шапку страницы
+function addLogoutButton() {
+    const header = document.querySelector('.header');
+    if (header && !document.getElementById('logoutBtn')) {
+        const logoutBtn = document.createElement('button');
+        logoutBtn.id = 'logoutBtn';
+        logoutBtn.textContent = '🚪 Выйти';
+        logoutBtn.style.cssText = 'position: absolute; top: 20px; right: 20px; background: rgba(255,255,255,0.2); border: none; padding: 8px 16px; border-radius: 20px; color: white; cursor: pointer; font-weight: 500; transition: background 0.2s;';
+        
+        // Эффект наведения мыши на кнопку
+        logoutBtn.onmouseover = () => { logoutBtn.style.background = 'rgba(255,255,255,0.3)'; };
+        logoutBtn.onmouseout = () => { logoutBtn.style.background = 'rgba(255,255,255,0.2)'; };
+        
+        logoutBtn.onclick = () => logout();
+        header.style.position = 'relative';
+        header.appendChild(logoutBtn);
+    }
 }
