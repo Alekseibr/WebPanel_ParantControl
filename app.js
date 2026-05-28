@@ -80,15 +80,10 @@ function initMap() {
 
 async function loadSuspendedApps() {
     const snapshot = await db.ref('device/suspended_apps').get();
-    const rawData = snapshot.val() || {};
-    
-    if (typeof rawData === 'object' && !Array.isArray(rawData)) {
-        suspendedAppsList = Object.keys(rawData).map(key => key.replace(/_/g, '.'));
-    } else {
-        suspendedAppsList = Array.isArray(rawData) ? rawData : [];
-    }
+    suspendedAppsList = snapshot.val() || [];
     updateToggleButtonState();
 }
+
 
 async function loadBlockingState() {
     const snapshot = await db.ref('commands/blocking_enabled').get();
@@ -175,13 +170,16 @@ async function loadApps() {
     container.innerHTML = '<div class="spinner"></div>';
     try {
         await db.ref('commands/request_apps').set(true);
-        await new Promise(resolve => setTimeout(resolve, 3000));
+        await new Promise(resolve => setTimeout(resolve, 2500));
+        
         const snapshot = await db.ref('device/apps_list').get();
         const allApps = snapshot.val() || [];
         await loadSuspendedApps();
+        
         const userApps = allApps.filter(a => !a.isSystem);
         const systemApps = allApps.filter(a => a.isSystem);
         let html = '';
+        
         if (userApps.length > 0) {
             html += '<div class="group-title">📱 Пользовательские приложения</div>';
             html += renderAppGroup(userApps);
@@ -192,22 +190,27 @@ async function loadApps() {
         }
         if (allApps.length === 0) html = '<div style="text-align:center; padding:20px;">Нет приложений</div>';
         container.innerHTML = html;
-        document.querySelectorAll('#appsContainer input').forEach(cb => cb.addEventListener('change', () => updateToggleButtonState()));
+        
+        // Навешиваем обработчик изменения статуса на чекбоксы
+        document.querySelectorAll('#appsContainer input').forEach(cb => {
+            cb.addEventListener('change', () => updateToggleButtonState());
+        });
     } catch (error) {
         console.error('Ошибка загрузки приложений:', error);
-        container.innerHTML = '<div style="text-align:center; padding:20px; color:red;">Ошибка</div>';
+        container.innerHTML = '<div style="text-align:center; padding:20px; color:red;">Ошибка загрузки</div>';
     }
 }
 
+// 🚀 ИСПРАВЛЕНО: Value чекбокса хранит оригинальное имя пакета (с точками!)
 function renderAppGroup(apps) {
     return apps.map(app => {
         const isBlocked = suspendedAppsList.includes(app.packageName);
-        const inputId = `app_${app.packageName.replace(/\./g, '_')}`;
+        const inputId = `app_${app.packageName.replace(/\./g, '_')}`; // Только для ID меняем точки на _
         return `
             <div class="app-item ${app.isSystem ? 'system' : ''}">
                 <input type="checkbox" value="${escapeHtml(app.packageName)}" id="${inputId}" ${isBlocked ? 'checked' : ''}>
                 <label for="${inputId}">
-                    <div class="app-name">${escapeHtml(app.name)}${isBlocked ? ' <span style="color:#dc3545;">(заблокировано)</span>' : ''}</div>
+                    <div class="app-name">${escapeHtml(app.name)}${isBlocked ? ' <span style="color:#dc3545; font-weight:bold;">(заблокировано)</span>' : ''}</div>
                     <div class="app-package">${escapeHtml(app.packageName)}</div>
                 </label>
             </div>
@@ -215,8 +218,9 @@ function renderAppGroup(apps) {
     }).join('');
 }
 
+
 function updateToggleButtonState() {
-    const toggleBtn = document.getElementById('blockSelectedBtn') || document.getElementById('toggleBlockSelectedBtn');
+    const toggleBtn = document.getElementById('blockSelectedBtn');
     if (!toggleBtn) return;
     
     const selected = Array.from(document.querySelectorAll('#appsContainer input:checked')).map(cb => cb.value);
@@ -237,7 +241,9 @@ function updateToggleButtonState() {
         toggleBtn.style.background = '#dc3545';
     }
 }
+
 // Переключение точечной блокировки выбранных чекбоксами приложений
+// 🚀 ИСПРАВЛЕНО: Отправляем чистый массив строк с точками. Никаких замен символов!
 async function toggleBlockSelected() {
     const selected = Array.from(document.querySelectorAll('#appsContainer input:checked')).map(cb => cb.value);
     if (selected.length === 0) {
@@ -250,18 +256,18 @@ async function toggleBlockSelected() {
     try {
         let newBlockList = [];
         if (allSelectedBlocked) {
-            // Если они заблокированы — убираем их из списка блокировок (размораживаем)
             newBlockList = suspendedAppsList.filter(pkg => !selected.includes(pkg));
-            showNotification('Успешно', `Разблокировано ${selected.length} приложений`);
+            showNotification('Успешно', `Запрос на разблокировку отправлен`);
         } else {
-            // Если не заблокированы — объединяем текущие блокировки с новыми
             newBlockList = Array.from(new Set([...suspendedAppsList, ...selected]));
-            showNotification('Успешно', `Заблокировано ${selected.length} приложений`);
+            showNotification('Успешно', `Запрос на блокировку отправлен`);
         }
         
-        // Отправляем массив пакетов (с точками!) в исходный рабочий узел block_apps
+        // Стреляем оригинальным массивом в узел block_apps
         await db.ref('commands/block_apps').set(newBlockList);
-        setTimeout(() => loadApps(), 1000);
+        
+        // 🚀 ИСПРАВЛЕНО: Больше НЕ вызываем loadApps() вручную, ломая рендеринг! 
+        // База сама обновит чекбоксы через реактивный слушатель ниже.
     } catch (error) {
         console.error('Ошибка точечной блокировки:', error);
         showNotification('Ошибка', 'Не удалось применить конфигурацию');
@@ -348,10 +354,21 @@ async function requestLocation() {
     }
 }
 
+// 🚀 ИСПРАВЛЕНО: Убрали циклическое зацикливание вызовов страниц
 function setupRealtimeListeners() {
     db.ref('device/status').on('value', () => loadDeviceStatus());
-    db.ref('device/suspended_apps').on('value', () => { loadSuspendedApps(); loadApps(); });
-    db.ref('commands/blocking_enabled').on('value', (snap) => { currentBlockingState = snap.val() === true; updateToggleButton(); });
+    
+    // При изменении структуры на телефоне просто тихо обновляем внутренний массив,
+    // но НЕ стираем и НЕ перерисовываем страницу у родителя перед носом!
+    db.ref('device/suspended_apps').on('value', (snapshot) => {
+        suspendedAppsList = snapshot.val() || [];
+        updateToggleButtonState();
+    });
+    
+    db.ref('commands/blocking_enabled').on('value', (snap) => { 
+        currentBlockingState = snap.val() === true; 
+        updateToggleButton(); 
+    });
 }
 
 function setupButtons() {
