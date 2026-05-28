@@ -10,6 +10,7 @@ const firebaseConfig = {
     measurementId: "G-1Q58H5V8YT"
 };
 
+// Инициализация системных модулей
 firebase.initializeApp(firebaseConfig);
 const auth = firebase.auth();
 const db = firebase.database();
@@ -67,7 +68,7 @@ function initApp() {
     loadLocation();
     loadApps();
     loadSuspendedApps();
-    loadStats();
+    loadStats(); 
     setupRealtimeListeners();
     setupButtons();
 }
@@ -235,7 +236,6 @@ function updateToggleButtonState() {
         toggleBtn.style.background = '#dc3545';
     }
 }
-
 async function toggleBlockSelected() {
     const selected = Array.from(document.querySelectorAll('#appsContainer input:checked')).map(cb => cb.value);
     if (selected.length === 0) {
@@ -247,9 +247,12 @@ async function toggleBlockSelected() {
     
     try {
         if (allSelectedBlocked) {
+            // Разблокировать выбранные: добавляем пакеты в список исключений
             await db.ref('settings/exempt_apps').set(selected);
             showNotification('Успешно', `Запрос на разблокировку ${selected.length} приложений отправлен`);
         } else {
+            // Заблокировать выбранные: очищаем список исключений, заставляя приложение заморозить остальное
+            // Отправляем пакеты в чистом виде (с точками), без замены на подчеркивания
             await db.ref('settings/exempt_apps').set([]);
             showNotification('Успешно', `Запрос на блокировку ${selected.length} приложений отправлен`);
         }
@@ -260,13 +263,24 @@ async function toggleBlockSelected() {
     }
 }
 
+// 🚀 ПРИВЯЗАНО К КНОПКЕ HTML: Метод экстренного обновления суточного экранного времени
+async function requestStatsRefresh() {
+    showNotification('Синхронизация', 'Запрос актуального экранного времени отправлен...');
+    try {
+        await db.ref('commands/request_stats').set(true);
+        console.log("✅ Команда request_stats успешно отправлена в Firebase");
+    } catch (error) {
+        console.error('Ошибка запроса статистики:', error);
+    }
+}
+
 async function loadStats() {
     const tbody = document.getElementById('statsBody');
     if (!tbody) return;
     tbody.innerHTML = '<tr><td colspan="2" style="text-align:center;">Загрузка статистики...</td></tr>';
     
     try {
-        // Подписываемся на обновленный нами узел суточных логов в реальном времени
+        // Подписываемся на узел суточных логов в реальном времени
         db.ref('device/usage_stats').on('value', (snapshot) => {
             const data = snapshot.val() || {};
             const stats = data.installed_apps || {};
@@ -278,7 +292,7 @@ async function loadStats() {
             }
             
             // Сортируем массив по минутам (от большего к меньшему)
-            entries.sort((a, b) => (b[1].timeInMinutes || 0) - (a[1].timeInMinutes || 0));
+            entries.sort((a, b) => (b.timeInMinutes || 0) - (a.timeInMinutes || 0));
             
             // Выводим в таблицу НАЗВАНИЕ приложения и чистые минуты за сегодня
             tbody.innerHTML = entries.map(([_, appObject]) => `
@@ -354,7 +368,6 @@ auth.onAuthStateChanged((user) => {
     if (user) {
         currentUser = user;
         
-        // Переключаем видимость контейнеров панели
         const authContainer = document.getElementById('authContainer');
         const appContainer = document.getElementById('appContainer');
         const welcomeMessage = document.getElementById('welcomeMessage');
@@ -370,7 +383,6 @@ auth.onAuthStateChanged((user) => {
             welcomeMessage.innerHTML = `Добро пожаловать, ${parentName}! 👋`;
         }
         
-        // Запускаем инициализацию всех фоновых слушателей Firebase
         initApp();
         addLogoutButton();
     } else {
@@ -382,7 +394,6 @@ auth.onAuthStateChanged((user) => {
     }
 });
 
-// Слушатель загрузки DOM дерева для привязки формы входа
 document.addEventListener('DOMContentLoaded', () => {
     const loginBtn = document.getElementById('loginButton');
     const loginEmail = document.getElementById('loginEmail');
@@ -405,7 +416,6 @@ document.addEventListener('DOMContentLoaded', () => {
             loginBtn.textContent = 'Вход...';
             
             try {
-                // Выполняем официальный вход в Firebase для родителей
                 await auth.signInWithEmailAndPassword(email, password);
             } catch (error) {
                 let errorMessage = 'Ошибка входа';
@@ -420,14 +430,12 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
         
-        // Позволяем входить по нажатию клавиши Enter в поле пароля
         loginPassword.addEventListener('keypress', (e) => { 
             if (e.key === 'Enter') loginBtn.click(); 
         });
     }
 });
 
-// Функция безопасного выхода из панели администратора
 function logout() { 
     auth.signOut().then(() => {
         location.reload(); 
@@ -436,7 +444,6 @@ function logout() {
     });
 }
 
-// Динамическое добавление стильной кнопки выхода в шапку страницы
 function addLogoutButton() {
     const header = document.querySelector('.header');
     if (header && !document.getElementById('logoutBtn')) {
@@ -445,7 +452,6 @@ function addLogoutButton() {
         logoutBtn.textContent = '🚪 Выйти';
         logoutBtn.style.cssText = 'position: absolute; top: 20px; right: 20px; background: rgba(255,255,255,0.2); border: none; padding: 8px 16px; border-radius: 20px; color: white; cursor: pointer; font-weight: 500; transition: background 0.2s;';
         
-        // Эффект наведения мыши на кнопку
         logoutBtn.onmouseover = () => { logoutBtn.style.background = 'rgba(255,255,255,0.3)'; };
         logoutBtn.onmouseout = () => { logoutBtn.style.background = 'rgba(255,255,255,0.2)'; };
         
