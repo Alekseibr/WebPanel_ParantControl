@@ -78,19 +78,10 @@ function initMap() {
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 }
 
-// Чтение списка заблокированных приложений из базы
+// 🚀 1. ЧТЕНИЕ: Читаем чистый массив строк с точками из device/suspended_apps
 async function loadSuspendedApps() {
     const snapshot = await db.ref('device/suspended_apps').get();
-    const data = snapshot.val() || [];
-    
-    // Если в базе лежит массив строк, берем его, если объект/карта — извлекаем ключи с деэкранированием
-    if (Array.isArray(data)) {
-        suspendedAppsList = data;
-    } else if (typeof data === 'object') {
-        suspendedAppsList = Object.keys(data).map(key => key.replace(/_/g, '.'));
-    } else {
-        suspendedAppsList = [];
-    }
+    suspendedAppsList = snapshot.val() || []; // Теперь это всегда плоский массив с точками
     updateToggleButtonState();
 }
 
@@ -211,16 +202,19 @@ async function loadApps() {
     }
 }
 
-// Отрисовка списка приложений на экране родителя
+// 🚀 2. ОТРИСОВКА ЧЕКБОКСОВ: Логика инвертирована под "Белый список"
 function renderAppGroup(apps) {
     return apps.map(app => {
-        const isBlocked = suspendedAppsList.includes(app.packageName);
+        // Если приложение НЕ находится в suspendedAppsList (НЕ заблокировано), 
+        // значит оно разрешено родительской панелью — ставим ему галочку активности!
+        const isExempt = !suspendedAppsList.includes(app.packageName);
         const inputId = `app_${app.packageName.replace(/\./g, '_')}`;
+        
         return `
             <div class="app-item ${app.isSystem ? 'system' : ''}">
-                <input type="checkbox" value="${escapeHtml(app.packageName)}" id="${inputId}" ${isBlocked ? 'checked' : ''}>
+                <input type="checkbox" value="${escapeHtml(app.packageName)}" id="${inputId}" ${isExempt ? 'checked' : ''}>
                 <label for="${inputId}">
-                    <div class="app-name">${escapeHtml(app.name)}${isBlocked ? ' <span style="color:#dc3545; font-weight:bold;">(заблокировано)</span>' : ''}</div>
+                    <div class="app-name">${escapeHtml(app.name)}${!isExempt ? ' <span style="color:#dc3545; font-weight:bold;">(заблокировано)</span>' : ''}</div>
                     <div class="app-package">${escapeHtml(app.packageName)}</div>
                 </label>
             </div>
@@ -229,62 +223,52 @@ function renderAppGroup(apps) {
 }
 
 
+// 🚀 3. ТЕКСТ КНОПКИ: Подстраиваем под режим Enterprise MDM Исключений
 function updateToggleButtonState() {
     const toggleBtn = document.getElementById('blockSelectedBtn');
     if (!toggleBtn) return;
     
-    const selected = Array.from(document.querySelectorAll('#appsContainer input:checked')).map(cb => cb.value);
-    if (selected.length === 0) {
-        toggleBtn.textContent = '🔒 Выберите приложения';
-        toggleBtn.style.background = '#ccc';
-        toggleBtn.disabled = true;
+    // Собираем приложения, на которых сейчас стоят галочки (разрешенные родителем)
+    const allowedApps = Array.from(document.querySelectorAll('#appsContainer input:checked')).map(cb => cb.value);
+    
+    if (allowedApps.length === 0) {
+        toggleBtn.textContent = '🔒 Заблокировать все приложения';
+        toggleBtn.style.background = '#dc3545';
+        toggleBtn.disabled = false;
         return;
     }
-    toggleBtn.disabled = false;
     
-    const allSelectedBlocked = selected.every(pkg => suspendedAppsList.includes(pkg));
-    if (allSelectedBlocked) {
-        toggleBtn.textContent = '🔓 Разблокировать выбранные';
-        toggleBtn.style.background = '#28a745';
-    } else {
-        toggleBtn.textContent = '🔒 Заблокировать выбранные';
-        toggleBtn.style.background = '#dc3545';
-    }
+    toggleBtn.textContent = '💾 Применить белый список';
+    toggleBtn.style.background = '#28a745';
+    toggleBtn.disabled = false;
 }
 
-// 🚀 СИНХРОНИЗИРОВАНО: Точечная блокировка через существующий триггер request_apps
+// 🚀 4. ИСПОЛНИТЕЛЬНЫЙ МЕТОД: Отправка разрешенного списка в settings/exempt_apps
 async function toggleBlockSelected() {
-    const selected = Array.from(document.querySelectorAll('#appsContainer input:checked')).map(cb => cb.value);
-    if (selected.length === 0) {
-        showNotification('Предупреждение', 'Выберите приложения');
-        return;
-    }
-    
-    const allSelectedBlocked = selected.every(pkg => suspendedAppsList.includes(pkg));
+    // Собираем все пакеты, на которых родитель оставил ГАЛОЧКИ (разрешенный софт)
+    const exemptApps = Array.from(document.querySelectorAll('#appsContainer input:checked')).map(cb => cb.value);
     
     try {
-        let newBlockList = [];
-        if (allSelectedBlocked) {
-            // Разблокировать выбранные
-            newBlockList = suspendedAppsList.filter(pkg => !selected.includes(pkg));
-            showNotification('Успешно', 'Запрос на разблокировку отправлен...');
+        showNotification('Синхронизация', 'Применение конфигурации исключений...');
+        
+        // ⚡ Снайперский выстрел в узел, который ждет твоя MainActivity.kt!
+        // Firebase идеально принимает точки внутри значений обычного массива
+        await db.ref('settings/exempt_apps').set(exemptApps);
+        
+        // Если общий тумблер уже горит, пинаем телефон обновить состояние блокировок
+        if (currentBlockingState) {
+            await db.ref('commands/blocking_enabled').set(false);
+            await new Promise(resolve => setTimeout(resolve, 300));
+            await db.ref('commands/blocking_enabled').set(true);
         } else {
-            // Заблокировать выбранные
-            newBlockList = Array.from(new Set([...suspendedAppsList, ...selected]));
-            showNotification('Успешно', 'Запрос на блокировку отправлен...');
+            // Если тумблер выключен, просто обновляем список приложений на экране родителя
+            await db.ref('commands/request_apps').set(true);
         }
         
-        // 1. Сохраняем итоговый массив блокировок напрямую в системную папку
-        await db.ref('device/suspended_apps').set(newBlockList);
-        
-        // 2. ⚡ Пинаем телефон через ПЕРЕХВАТЧИК №3, заставляя его мгновенно применить эту конфигурацию!
-        await db.ref('commands/request_apps').set(true);
-        
-        // Перерисовываем UI через секунду
         setTimeout(() => loadApps(), 1500);
     } catch (error) {
-        console.error('Ошибка точечной блокировки:', error);
-        showNotification('Ошибка', 'Не удалось применить конфигурацию');
+        console.error('Ошибка сохранения белого списка:', error);
+        showNotification('Ошибка', 'Не удалось отправить конфигурацию');
     }
 }
 
@@ -368,13 +352,14 @@ async function requestLocation() {
     }
 }
 
-// Настройка живых слушателей
+// 🚀 5. ЖИВЫЕ СЛУШАТЕЛИ: Убрали циклическую перезагрузку страниц
 function setupRealtimeListeners() {
     db.ref('device/status').on('value', () => loadDeviceStatus());
     
-    // Тихо обновляем чекбоксы при ответе от телефона, не ломая верстку страницы
-    db.ref('device/suspended_apps').on('value', () => {
-        loadSuspendedApps();
+    // При ответе от телефона тихо обновляем массив заблокированных, без сброса чекбоксов
+    db.ref('device/suspended_apps').on('value', (snapshot) => {
+        suspendedAppsList = snapshot.val() || [];
+        updateToggleButtonState();
     });
     
     db.ref('commands/blocking_enabled').on('value', (snap) => { 
