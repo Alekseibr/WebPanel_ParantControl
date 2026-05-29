@@ -491,38 +491,36 @@ function logout() {
 function addLogoutButton() {
     const header = document.querySelector('.header');
     if (header && !document.getElementById('logoutBtn')) {
-        // Добавляем отступ справа для заголовка
-        const h1 = header.querySelector('h1');
-        if (h1) {
-            h1.style.marginRight = '80px';
-        }
-        
         const logoutBtn = document.createElement('button');
         logoutBtn.id = 'logoutBtn';
-        logoutBtn.textContent = '🚪';
+        logoutBtn.textContent = '🚪 Выйти';
         
+        // Исправленные стили для мобильных устройств
         logoutBtn.style.cssText = `
-            position: absolute;
-            top: 50%;
-            transform: translateY(-50%);
-            right: 15px;
+            display: block;
+            margin: 10px auto 0 auto;
             background: rgba(255,255,255,0.2);
             border: none;
-            padding: 8px 12px;
-            border-radius: 30px;
+            padding: 8px 20px;
+            border-radius: 20px;
             color: white;
             cursor: pointer;
             font-weight: 500;
-            font-size: 16px;
+            font-size: 14px;
             transition: background 0.2s;
-            z-index: 10;
+            width: fit-content;
         `;
         
         logoutBtn.onmouseover = () => { logoutBtn.style.background = 'rgba(255,255,255,0.3)'; };
         logoutBtn.onmouseout = () => { logoutBtn.style.background = 'rgba(255,255,255,0.2)'; };
         logoutBtn.onclick = () => logout();
         
-        header.style.position = 'relative';
-        header.appendChild(logoutBtn);
+        // Вставляем после заголовка h1, а не позиционируем абсолютно
+        const h1 = header.querySelector('h1');
+        if (h1) {
+            h1.insertAdjacentElement('afterend', logoutBtn);
+        } else {
+            header.appendChild(logoutBtn);
+        }
     }
 }
