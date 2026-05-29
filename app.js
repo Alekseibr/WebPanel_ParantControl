@@ -494,33 +494,13 @@ function addLogoutButton() {
         const logoutBtn = document.createElement('button');
         logoutBtn.id = 'logoutBtn';
         logoutBtn.textContent = '🚪 Выйти';
-        
-        // Исправленные стили для мобильных устройств
-        logoutBtn.style.cssText = `
-            display: block;
-            margin: 10px auto 0 auto;
-            background: rgba(255,255,255,0.2);
-            border: none;
-            padding: 8px 20px;
-            border-radius: 20px;
-            color: white;
-            cursor: pointer;
-            font-weight: 500;
-            font-size: 14px;
-            transition: background 0.2s;
-            width: fit-content;
-        `;
+        logoutBtn.style.cssText = 'position: absolute; top: 20px; right: 20px; background: rgba(255,255,255,0.2); border: none; padding: 8px 16px; border-radius: 20px; color: white; cursor: pointer; font-weight: 500; transition: background 0.2s;';
         
         logoutBtn.onmouseover = () => { logoutBtn.style.background = 'rgba(255,255,255,0.3)'; };
         logoutBtn.onmouseout = () => { logoutBtn.style.background = 'rgba(255,255,255,0.2)'; };
-        logoutBtn.onclick = () => logout();
         
-        // Вставляем после заголовка h1, а не позиционируем абсолютно
-        const h1 = header.querySelector('h1');
-        if (h1) {
-            h1.insertAdjacentElement('afterend', logoutBtn);
-        } else {
-            header.appendChild(logoutBtn);
-        }
+        logoutBtn.onclick = () => logout();
+        header.style.position = 'relative';
+        header.appendChild(logoutBtn);
     }
 }
