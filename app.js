@@ -202,19 +202,15 @@ async function loadApps() {
     }
 }
 
-// 🚀 2. ОТРИСОВКА ЧЕКБОКСОВ: Логика инвертирована под "Белый список"
 function renderAppGroup(apps) {
     return apps.map(app => {
-        // Если приложение НЕ находится в suspendedAppsList (НЕ заблокировано), 
-        // значит оно разрешено родительской панелью — ставим ему галочку активности!
-        const isExempt = !suspendedAppsList.includes(app.packageName);
-        const inputId = `app_${app.packageName.replace(/\./g, '_')}`;
-        
+        // Галочка = приложение в списке заблокированных
+        const isBlocked = suspendedAppsList.includes(app.packageName);
         return `
             <div class="app-item ${app.isSystem ? 'system' : ''}">
-                <input type="checkbox" value="${escapeHtml(app.packageName)}" id="${inputId}" ${isExempt ? 'checked' : ''}>
+                <input type="checkbox" value="${escapeHtml(app.packageName)}" ${isBlocked ? 'checked' : ''}>
                 <label for="${inputId}">
-                    <div class="app-name">${escapeHtml(app.name)}${!isExempt ? ' <span style="color:#dc3545; font-weight:bold;">(заблокировано)</span>' : ''}</div>
+                    <div class="app-name">${escapeHtml(app.name)}${isBlocked ? ' <span style="color:#dc3545;">(заблокировано)</span>' : ''}</div>
                     <div class="app-package">${escapeHtml(app.packageName)}</div>
                 </label>
             </div>
@@ -223,52 +219,22 @@ function renderAppGroup(apps) {
 }
 
 
-// 🚀 3. ТЕКСТ КНОПКИ: Подстраиваем под режим Enterprise MDM Исключений
 function updateToggleButtonState() {
-    const toggleBtn = document.getElementById('blockSelectedBtn');
-    if (!toggleBtn) return;
-    
-    // Собираем приложения, на которых сейчас стоят галочки (разрешенные родителем)
-    const allowedApps = Array.from(document.querySelectorAll('#appsContainer input:checked')).map(cb => cb.value);
-    
-    if (allowedApps.length === 0) {
-        toggleBtn.textContent = '🔒 Заблокировать все приложения';
-        toggleBtn.style.background = '#dc3545';
-        toggleBtn.disabled = false;
-        return;
-    }
-    
-    toggleBtn.textContent = '💾 Применить белый список';
-    toggleBtn.style.background = '#28a745';
-    toggleBtn.disabled = false;
+    const blockedApps = Array.from(document.querySelectorAll('#appsContainer input:checked')).map(cb => cb.value);
+    const count = blockedApps.length;
+    toggleBtn.textContent = count > 0 ? `🔒 Заблокировать выбранные (${count})` : '🔒 Заблокировать выбранные';
 }
 
-// 🚀 4. ИСПОЛНИТЕЛЬНЫЙ МЕТОД: Отправка разрешенного списка в settings/exempt_apps
 async function toggleBlockSelected() {
-    // Собираем все пакеты, на которых родитель оставил ГАЛОЧКИ (разрешенный софт)
-    const exemptApps = Array.from(document.querySelectorAll('#appsContainer input:checked')).map(cb => cb.value);
+    const blockedApps = Array.from(document.querySelectorAll('#appsContainer input:checked')).map(cb => cb.value);
     
-    try {
-        showNotification('Синхронизация', 'Применение конфигурации исключений...');
-        
-        // ⚡ Снайперский выстрел в узел, который ждет твоя MainActivity.kt!
-        // Firebase идеально принимает точки внутри значений обычного массива
-        await db.ref('settings/exempt_apps').set(exemptApps);
-        
-        // Если общий тумблер уже горит, пинаем телефон обновить состояние блокировок
-        if (currentBlockingState) {
-            await db.ref('commands/blocking_enabled').set(false);
-            await new Promise(resolve => setTimeout(resolve, 300));
-            await db.ref('commands/blocking_enabled').set(true);
-        } else {
-            // Если тумблер выключен, просто обновляем список приложений на экране родителя
-            await db.ref('commands/request_apps').set(true);
-        }
-        
-        setTimeout(() => loadApps(), 1500);
-    } catch (error) {
-        console.error('Ошибка сохранения белого списка:', error);
-        showNotification('Ошибка', 'Не удалось отправить конфигурацию');
+    // Сохраняем как чёрный список
+    await db.ref('settings/blocked_apps').set(blockedApps);
+    
+    if (currentBlockingState) {
+        // Заставляем телефон переприменить блокировки
+        await db.ref('commands/blocking_enabled').set(false);
+        await db.ref('commands/blocking_enabled').set(true);
     }
 }
 
