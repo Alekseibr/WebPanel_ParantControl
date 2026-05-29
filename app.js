@@ -494,14 +494,56 @@ function addLogoutButton() {
         const logoutBtn = document.createElement('button');
         logoutBtn.id = 'logoutBtn';
         logoutBtn.textContent = '🚪 Выйти';
-        logoutBtn.style.cssText = 'position: absolute; top: 20px; right: 20px; background: rgba(255,255,255,0.2); border: none; padding: 8px 16px; border-radius: 20px; color: white; cursor: pointer; font-weight: 500; transition: background 0.2s;';
+        
+        logoutBtn.style.cssText = `
+            position: absolute;
+            top: 50%;
+            transform: translateY(-50%);
+            right: 15px;
+            background: rgba(255,255,255,0.2);
+            border: none;
+            padding: 6px 12px;
+            border-radius: 20px;
+            color: white;
+            cursor: pointer;
+            font-weight: 500;
+            font-size: 12px;
+            transition: background 0.2s;
+            z-index: 10;
+            white-space: nowrap;
+        `;
         
         logoutBtn.onmouseover = () => { logoutBtn.style.background = 'rgba(255,255,255,0.3)'; };
         logoutBtn.onmouseout = () => { logoutBtn.style.background = 'rgba(255,255,255,0.2)'; };
-        
         logoutBtn.onclick = () => logout();
+        
         header.style.position = 'relative';
         header.appendChild(logoutBtn);
+        
+        // Добавляем медиа-запрос для мобильных устройств
+        const style = document.createElement('style');
+        style.textContent = `
+            @media (max-width: 660px) {
+                #logoutBtn {
+                    position: relative !important;
+                    top: auto !important;
+                    right: auto !important;
+                    transform: none !important;
+                    margin-top: 20px !important;
+                    margin-bottom: 10px !important;
+                    display: inline-block !important;
+                }
+                .header h1 {
+                    margin-right: 0 !important;
+                }
+                .header p {
+                    margin-right: 0 !important;
+                }
+                .header {
+                    text-align: center !important;
+                }
+            }
+        `;
+        document.head.appendChild(style);
     }
 }
-
