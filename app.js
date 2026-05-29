@@ -72,8 +72,8 @@ function initMap() {
 async function loadSuspendedApps() {
     const snapshot = await db.ref('device/suspended_apps').get();
     suspendedAppsList = snapshot.val() || [];
-    updateToggleButtonState();
     updateCheckboxesState();
+    updateSelectAllButtonState();
 }
 
 function updateCheckboxesState() {
@@ -205,8 +205,10 @@ async function loadApps() {
         restoreCheckboxesState();
         
         document.querySelectorAll('#appsContainer input').forEach(cb => {
-            cb.addEventListener('change', () => updateToggleButtonState());
+            cb.addEventListener('change', () => updateSelectAllButtonState());
         });
+        
+        updateSelectAllButtonState();
     } catch (error) {
         console.error('Ошибка загрузки приложений:', error);
         container.innerHTML = '<div style="text-align:center; padding:20px; color:red;">Ошибка загрузки</div>';
@@ -237,24 +239,48 @@ function restoreCheckboxesState() {
     });
 }
 
-function updateToggleButtonState() {
-    const toggleBtn = document.getElementById('blockSelectedBtn');
-    if (!toggleBtn) return;
+// Новая функция: состояние кнопки "Выбрать все / Снять все"
+function updateSelectAllButtonState() {
+    const selectAllBtn = document.getElementById('selectAllBtn');
+    if (!selectAllBtn) return;
     
-    const checkedApps = Array.from(document.querySelectorAll('#appsContainer input:checked')).map(cb => cb.value);
-    const count = checkedApps.length;
+    const checkboxes = document.querySelectorAll('#appsContainer input[type="checkbox"]');
+    const totalCount = checkboxes.length;
+    const checkedCount = Array.from(checkboxes).filter(cb => cb.checked).length;
     
-    if (count === 0) {
-        toggleBtn.textContent = '🔒 Заблокировать выбранные';
-        toggleBtn.style.background = 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)';
+    if (totalCount === 0) return;
+    
+    if (checkedCount === totalCount) {
+        selectAllBtn.textContent = '✅ Снять все';
+        selectAllBtn.style.background = '#ffc107';
+        selectAllBtn.style.color = '#333';
     } else {
-        toggleBtn.textContent = `🔒 Заблокировать выбранные (${count})`;
-        toggleBtn.style.background = '#dc3545';
+        selectAllBtn.textContent = '☑️ Выбрать все';
+        selectAllBtn.style.background = '#28a745';
+        selectAllBtn.style.color = 'white';
     }
-    toggleBtn.disabled = false;
 }
 
-async function toggleBlockSelected() {
+// Новая функция: выбрать все / снять все
+function toggleSelectAll() {
+    const checkboxes = document.querySelectorAll('#appsContainer input[type="checkbox"]');
+    const selectAllBtn = document.getElementById('selectAllBtn');
+    if (!selectAllBtn) return;
+    
+    const isAllChecked = Array.from(checkboxes).every(cb => cb.checked);
+    
+    checkboxes.forEach(cb => {
+        cb.checked = !isAllChecked;
+    });
+    
+    updateSelectAllButtonState();
+    
+    // Автоматически применяем изменения
+    applyBlockedApps();
+}
+
+// Применить выбранные приложения (отправить в Firebase)
+async function applyBlockedApps() {
     const blockedApps = Array.from(document.querySelectorAll('#appsContainer input:checked')).map(cb => cb.value);
     
     try {
@@ -271,7 +297,6 @@ async function toggleBlockSelected() {
         }
         
         updateCheckboxesState();
-        updateToggleButtonState();
         
         showNotification('Готово', `Настройки блокировки применены`);
     } catch (error) {
@@ -359,7 +384,7 @@ function setupRealtimeListeners() {
     db.ref('device/suspended_apps').on('value', (snapshot) => {
         suspendedAppsList = snapshot.val() || [];
         updateCheckboxesState();
-        updateToggleButtonState();
+        updateSelectAllButtonState();
     });
     
     db.ref('commands/blocking_enabled').on('value', (snap) => { 
@@ -372,13 +397,13 @@ function setupButtons() {
     const toggleBtn = document.getElementById('toggleBlocking');
     const syncBtn = document.getElementById('syncBtn');
     const loadAppsBtn = document.getElementById('loadAppsBtn');
-    const blockSelectedBtn = document.getElementById('blockSelectedBtn');
+    const selectAllBtn = document.getElementById('selectAllBtn');
     const requestLocationBtn = document.getElementById('requestLocationBtn');
 
     if (toggleBtn) toggleBtn.onclick = () => toggleBlocking();
     if (syncBtn) syncBtn.onclick = () => sync();
     if (loadAppsBtn) loadAppsBtn.onclick = () => loadApps();
-    if (blockSelectedBtn) blockSelectedBtn.onclick = () => toggleBlockSelected();
+    if (selectAllBtn) selectAllBtn.onclick = () => toggleSelectAll();
     if (requestLocationBtn) requestLocationBtn.onclick = () => requestLocation();
 }
 
