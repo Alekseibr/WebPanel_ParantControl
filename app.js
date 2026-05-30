@@ -58,7 +58,7 @@ function initApp() {
     loadDeviceStatus();
     loadLocation();
     loadApps();
-    loadSuspendedApps();
+    loadInitialBlockedList();
     loadStats(); 
     setupRealtimeListeners();
     setupButtons();
@@ -69,11 +69,13 @@ function initMap() {
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 }
 
-async function loadSuspendedApps() {
-    const snapshot = await db.ref('device/suspended_apps').get();
+// Загрузка начального списка из settings/blocked_apps (а не из device/suspended_apps)
+async function loadInitialBlockedList() {
+    const snapshot = await db.ref('settings/blocked_apps').get();
     suspendedAppsList = snapshot.val() || [];
     updateCheckboxesState();
     updateSelectAllButtonState();
+    console.log('📱 Загружен начальный список из settings/blocked_apps:', suspendedAppsList.length);
 }
 
 function updateCheckboxesState() {
@@ -185,7 +187,6 @@ async function loadApps() {
         
         const snapshot = await db.ref('device/apps_list').get();
         const allApps = snapshot.val() || [];
-        await loadSuspendedApps();
         
         const userApps = allApps.filter(a => !a.isSystem);
         const systemApps = allApps.filter(a => a.isSystem);
@@ -196,7 +197,7 @@ async function loadApps() {
             html += renderAppGroup(userApps);
         }
         if (systemApps.length > 0) {
-            html += '<div class="group-title">⚙️ Системные приложения</div>';
+            html += '<div class="group-title">⚙️ Системные приложения (не блокируются)</div>';
             html += renderAppGroup(systemApps);
         }
         if (allApps.length === 0) html = '<div style="text-align:center; padding:20px;">Нет приложений</div>';
@@ -205,7 +206,10 @@ async function loadApps() {
         restoreCheckboxesState();
         
         document.querySelectorAll('#appsContainer input').forEach(cb => {
-            cb.addEventListener('change', () => updateSelectAllButtonState());
+            cb.addEventListener('change', () => {
+                updateSelectAllButtonState();
+                applyBlockedApps();
+            });
         });
         
         updateSelectAllButtonState();
@@ -239,7 +243,6 @@ function restoreCheckboxesState() {
     });
 }
 
-// Новая функция: состояние кнопки "Выбрать все / Снять все"
 function updateSelectAllButtonState() {
     const selectAllBtn = document.getElementById('selectAllBtn');
     if (!selectAllBtn) return;
@@ -261,44 +264,41 @@ function updateSelectAllButtonState() {
     }
 }
 
-// Новая функция: выбрать все / снять все
 function toggleSelectAll() {
     const checkboxes = document.querySelectorAll('#appsContainer input[type="checkbox"]');
-    const selectAllBtn = document.getElementById('selectAllBtn');
-    if (!selectAllBtn) return;
-    
-    const isAllChecked = Array.from(checkboxes).every(cb => cb.checked);
+    const allChecked = Array.from(checkboxes).every(cb => cb.checked);
     
     checkboxes.forEach(cb => {
-        cb.checked = !isAllChecked;
+        cb.checked = !allChecked;
     });
     
     updateSelectAllButtonState();
-    
-    // Автоматически применяем изменения
     applyBlockedApps();
 }
 
-// Применить выбранные приложения (отправить в Firebase)
+// ГЛАВНАЯ ФУНКЦИЯ - отправляет список в Firebase
 async function applyBlockedApps() {
     const blockedApps = Array.from(document.querySelectorAll('#appsContainer input:checked')).map(cb => cb.value);
+    
+    console.log('🔥 applyBlockedApps вызвана!', blockedApps.length);
     
     try {
         showNotification('Синхронизация', `Блокировка ${blockedApps.length} приложений...`);
         
+        // Сохраняем чёрный список в settings
         await db.ref('settings/blocked_apps').set(blockedApps);
         suspendedAppsList = blockedApps;
-        await db.ref('device/suspended_apps').set(blockedApps);
         
+        // Если тумблер включён — перезапускаем его для применения
         if (currentBlockingState) {
+            console.log('🔄 Тумблер включён, перезапускаем блокировку...');
             await db.ref('commands/blocking_enabled').set(false);
             await new Promise(resolve => setTimeout(resolve, 300));
             await db.ref('commands/blocking_enabled').set(true);
         }
         
         updateCheckboxesState();
-        
-        showNotification('Готово', `Настройки блокировки применены`);
+        showNotification('Готово', `Заблокировано ${blockedApps.length} приложений`);
     } catch (error) {
         console.error('Ошибка сохранения чёрного списка:', error);
         showNotification('Ошибка', 'Не удалось отправить конфигурацию');
@@ -317,7 +317,7 @@ async function requestStatsRefresh() {
 async function loadStats() {
     const tbody = document.getElementById('statsBody');
     if (!tbody) return;
-    tbody.innerHTML = '<tr><td colspan="2" style="text-align:center;">Загрузка статистики...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="2" style="text-align:center;">Загрузка статистики...<\/td><\/tr>';
     
     try {
         db.ref('device/usage_stats').on('value', (snapshot) => {
@@ -326,7 +326,7 @@ async function loadStats() {
             
             const entries = Object.entries(stats);
             if (entries.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="2" style="text-align:center;">Экранное время за сегодня отсутствует</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="2" style="text-align:center;">Экранное время за сегодня отсутствует<\/td><\/tr>';
                 return;
             }
             
@@ -334,14 +334,14 @@ async function loadStats() {
             
             tbody.innerHTML = entries.map(([_, appObject]) => `
                 <tr>
-                    <td style="font-weight:500;">📊 ${escapeHtml(appObject.name)}</td>
-                    <td style="font-weight:bold; color:#007bff; text-align:right;">${appObject.timeInMinutes} мин.</td>
-                </tr>
+                    <td style="font-weight:500;">📊 ${escapeHtml(appObject.name)}<\/td>
+                    <td style="font-weight:bold; color:#007bff; text-align:right;">${appObject.timeInMinutes} мин.<\/td>
+                <\/tr>
             `).join('');
         });
     } catch (error) {
         console.error('Ошибка загрузки статистики:', error);
-        tbody.innerHTML = '<tr><td colspan="2" style="text-align:center; color:red;">Ошибка загрузки данных</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="2" style="text-align:center; color:red;">Ошибка загрузки данных<\/td><\/tr>';
     }
 }
 
@@ -358,7 +358,7 @@ async function sync() {
         
         await new Promise(resolve => setTimeout(resolve, 2500));
         await loadDeviceStatus();
-        await loadApps();
+        // Не перезагружаем приложения, чтобы не сбросить чекбоксы
         
         if (syncStatus) syncStatus.textContent = '✅ Готово';
         setTimeout(() => { if (syncStatus) syncStatus.textContent = 'Готово'; }, 2000);
@@ -381,10 +381,14 @@ async function requestLocation() {
 function setupRealtimeListeners() {
     db.ref('device/status').on('value', () => loadDeviceStatus());
     
-    db.ref('device/suspended_apps').on('value', (snapshot) => {
-        suspendedAppsList = snapshot.val() || [];
-        updateCheckboxesState();
-        updateSelectAllButtonState();
+    // Слушаем изменения в settings/blocked_apps (выбор родителя)
+    db.ref('settings/blocked_apps').on('value', (snapshot) => {
+        const newList = snapshot.val() || [];
+        if (JSON.stringify(suspendedAppsList) !== JSON.stringify(newList)) {
+            suspendedAppsList = newList;
+            updateCheckboxesState();
+            updateSelectAllButtonState();
+        }
     });
     
     db.ref('commands/blocking_enabled').on('value', (snap) => { 
@@ -520,7 +524,6 @@ function addLogoutButton() {
         header.style.position = 'relative';
         header.appendChild(logoutBtn);
         
-        // Добавляем медиа-запрос для мобильных устройств
         const style = document.createElement('style');
         style.textContent = `
             @media (max-width: 660px) {
