@@ -380,6 +380,7 @@ async function loadStats() {
     }
 }
 
+// Оптимизированная кнопка принудительной синхронизации: шлет команды атомарно, одним пакетом
 async function sync() {
     const syncBtn = document.getElementById('syncBtn');
     const syncStatus = document.getElementById('syncStatus');
@@ -387,16 +388,17 @@ async function sync() {
     if (syncStatus) syncStatus.textContent = 'Синхронизация...';
     
     try {
-        await db.ref('commands/request_stats').set(true);
-        await db.ref('commands/request_apps').set(true);
-        await db.ref('commands/request_location').set(true);
+        showNotification('Синхронизация', 'Запрос актуальных данных отправлен на устройство...');
         
-        await new Promise(resolve => setTimeout(resolve, 2500));
-        await loadDeviceStatus();
-        // Не перезагружаем приложения, чтобы не сбросить чекбоксы
+        // 🚀 АТОМАРНОЕ ОБНОВЛЕНИЕ: Записываем триггеры одним объектом, исключая race condition на Oppo
+        await db.ref('commands').update({
+            request_stats: true,
+            request_apps: true,
+            request_location: true
+        });
         
-        if (syncStatus) syncStatus.textContent = '✅ Готово';
-        setTimeout(() => { if (syncStatus) syncStatus.textContent = 'Готово'; }, 2000);
+        if (syncStatus) syncStatus.textContent = '✅ Запрос отправлен';
+        setTimeout(() => { if (syncStatus) syncStatus.textContent = 'Синхронизация'; }, 2000);
     } catch (error) {
         console.error('Ошибка глобальной синхронизации:', error);
         if (syncStatus) syncStatus.textContent = '❌ Ошибка';
