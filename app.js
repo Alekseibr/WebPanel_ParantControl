@@ -52,63 +52,17 @@ function showNotification(title, body) {
 }
 
 // ========== ОСНОВНЫЕ ФУНКЦИИ ==========
-// 🚀 ДИНАМИЧЕСКИЙ СБОР: Вешаем реактивный слушатель на изменения в базе данных
 function initApp() {
     initMap();
     loadBlockingState();
     loadDeviceStatus();
     loadLocation();
-    
-    // Вместо разового вызова loadApps, запускаем постоянное динамическое отслеживание списка программ
-    listenToAppsListChanges(); 
-    
+    loadApps();
     loadInitialBlockedList();
     loadStats(); 
     setupRealtimeListeners();
     setupButtons();
 }
-function listenToAppsListChanges() {
-    const container = document.getElementById('appsContainer');
-    if (!container) return;
-    
-    container.innerHTML = '<div style="text-align:center; padding:20px;">Ожидание синхронизации с телефоном...</div>';
-
-    // Слушаем ветку приложений в реальном времени. Кнопка "Загрузить приложения" больше не нужна!
-    db.ref('device/apps_list').on('value', (snapshot) => {
-        const allApps = snapshot.val() || [];
-        if (allApps.length === 0) {
-            container.innerHTML = '<div style="text-align:center; padding:20px;">Список пуст. Нажмите "Синхронизация" для запроса логов.</div>';
-            return;
-        }
-        
-        console.log("📡 Получен свежий список приложений с телефона:", allApps.length);
-        const userApps = allApps.filter(a => !a.isSystem);
-        const systemApps = allApps.filter(a => a.isSystem);
-        let html = '';
-        
-        if (userApps.length > 0) {
-            html += '<div class="group-title">📱 Пользовательские приложения</div>';
-            html += renderAppGroup(userApps);
-        }
-        if (systemApps.length > 0) {
-            html += '<div class="group-title">⚙️ Системные приложения (не блокируются)</div>';
-            html += renderAppGroup(systemApps);
-        }
-        
-        container.innerHTML = html;
-        
-        // Вешаем события сохранения на каждый клик по чекбоксу
-        document.querySelectorAll('#appsContainer input[type="checkbox"]').forEach(cb => {
-            cb.addEventListener('change', () => {
-                updateSelectAllButtonState();
-                applyBlockedApps(); // Мгновенно отправляет измененный список
-            });
-        });
-        
-        updateSelectAllButtonState();
-    });
-}
-
 
 function initMap() {
     map = L.map('map').setView([55.751244, 37.618423], 13);
@@ -323,20 +277,31 @@ function toggleSelectAll() {
 }
 
 // ГЛАВНАЯ ФУНКЦИЯ - отправляет список в Firebase
-// Оптимизированный метод: больше не дергает и не ломает глобальный тумблер commands/blocking_enabled
 async function applyBlockedApps() {
     const blockedApps = Array.from(document.querySelectorAll('#appsContainer input:checked')).map(cb => cb.value);
-    console.log('🔥 Атомарная отправка черного списка:', blockedApps.length);
+    
+    console.log('🔥 applyBlockedApps вызвана!', blockedApps.length);
     
     try {
-        // Просто сохраняем список. Android-клиент сам услышит изменения через свой ValueEventListener
+        showNotification('Синхронизация', `Блокировка ${blockedApps.length} приложений...`);
+        
+        // Сохраняем чёрный список в settings
         await db.ref('settings/blocked_apps').set(blockedApps);
         suspendedAppsList = blockedApps;
         
+        // Если тумблер включён — перезапускаем его для применения
+        if (currentBlockingState) {
+            console.log('🔄 Тумблер включён, перезапускаем блокировку...');
+            await db.ref('commands/blocking_enabled').set(false);
+            await new Promise(resolve => setTimeout(resolve, 300));
+            await db.ref('commands/blocking_enabled').set(true);
+        }
+        
         updateCheckboxesState();
+        showNotification('Готово', `Заблокировано ${blockedApps.length} приложений`);
     } catch (error) {
-        console.error('Ошибка сохранения конфигурации:', error);
-        showNotification('Ошибка', 'Не удалось связаться с базой данных');
+        console.error('Ошибка сохранения чёрного списка:', error);
+        showNotification('Ошибка', 'Не удалось отправить конфигурацию');
     }
 }
 
@@ -380,7 +345,6 @@ async function loadStats() {
     }
 }
 
-// Оптимизированная кнопка принудительной синхронизации: шлет команды атомарно, одним пакетом
 async function sync() {
     const syncBtn = document.getElementById('syncBtn');
     const syncStatus = document.getElementById('syncStatus');
@@ -388,17 +352,16 @@ async function sync() {
     if (syncStatus) syncStatus.textContent = 'Синхронизация...';
     
     try {
-        showNotification('Синхронизация', 'Запрос актуальных данных отправлен на устройство...');
+        await db.ref('commands/request_stats').set(true);
+        await db.ref('commands/request_apps').set(true);
+        await db.ref('commands/request_location').set(true);
         
-        // 🚀 АТОМАРНОЕ ОБНОВЛЕНИЕ: Записываем триггеры одним объектом, исключая race condition на Oppo
-        await db.ref('commands').update({
-            request_stats: true,
-            request_apps: true,
-            request_location: true
-        });
+        await new Promise(resolve => setTimeout(resolve, 2500));
+        await loadDeviceStatus();
+        // Не перезагружаем приложения, чтобы не сбросить чекбоксы
         
-        if (syncStatus) syncStatus.textContent = '✅ Запрос отправлен';
-        setTimeout(() => { if (syncStatus) syncStatus.textContent = 'Синхронизация'; }, 2000);
+        if (syncStatus) syncStatus.textContent = '✅ Готово';
+        setTimeout(() => { if (syncStatus) syncStatus.textContent = 'Готово'; }, 2000);
     } catch (error) {
         console.error('Ошибка глобальной синхронизации:', error);
         if (syncStatus) syncStatus.textContent = '❌ Ошибка';
