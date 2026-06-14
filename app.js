@@ -10,7 +10,6 @@ const firebaseConfig = {
     measurementId: "G-1Q58H5V8YT"
 };
 
-// Инициализация системных модулей
 firebase.initializeApp(firebaseConfig);
 const auth = firebase.auth();
 const db = firebase.database();
@@ -20,7 +19,6 @@ let marker = null;
 let accuracyCircle = null;
 let currentUser = null;
 let currentBlockingState = false;
-let appsList = [];
 let suspendedAppsList = [];
 let notificationTimeout = null;
 
@@ -51,7 +49,6 @@ function showNotification(title, body) {
     }, 5000);
 }
 
-// ========== ОСНОВНЫЕ ФУНКЦИИ ==========
 function initApp() {
     initMap();
     loadBlockingState();
@@ -59,7 +56,8 @@ function initApp() {
     loadLocation();
     loadApps();
     loadInitialBlockedList();
-    loadStats(); 
+    loadStats();
+    loadUnlockPassword();
     setupRealtimeListeners();
     setupButtons();
 }
@@ -69,13 +67,11 @@ function initMap() {
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 }
 
-// Загрузка начального списка из settings/blocked_apps (а не из device/suspended_apps)
 async function loadInitialBlockedList() {
     const snapshot = await db.ref('settings/blocked_apps').get();
     suspendedAppsList = snapshot.val() || [];
     updateCheckboxesState();
     updateSelectAllButtonState();
-    console.log('📱 Загружен начальный список из settings/blocked_apps:', suspendedAppsList.length);
 }
 
 function updateCheckboxesState() {
@@ -121,7 +117,6 @@ async function toggleBlocking() {
         updateToggleButton();
         showNotification('Блокировка', newState ? 'Включена' : 'Выключена');
     } catch (error) {
-        console.error('Ошибка изменения блокировки:', error);
         showNotification('Ошибка', 'Не удалось изменить состояние');
     }
 }
@@ -214,7 +209,6 @@ async function loadApps() {
         
         updateSelectAllButtonState();
     } catch (error) {
-        console.error('Ошибка загрузки приложений:', error);
         container.innerHTML = '<div style="text-align:center; padding:20px; color:red;">Ошибка загрузки</div>';
     }
 }
@@ -267,31 +261,20 @@ function updateSelectAllButtonState() {
 function toggleSelectAll() {
     const checkboxes = document.querySelectorAll('#appsContainer input[type="checkbox"]');
     const allChecked = Array.from(checkboxes).every(cb => cb.checked);
-    
-    checkboxes.forEach(cb => {
-        cb.checked = !allChecked;
-    });
-    
+    checkboxes.forEach(cb => { cb.checked = !allChecked; });
     updateSelectAllButtonState();
     applyBlockedApps();
 }
 
-// ГЛАВНАЯ ФУНКЦИЯ - отправляет список в Firebase
 async function applyBlockedApps() {
     const blockedApps = Array.from(document.querySelectorAll('#appsContainer input:checked')).map(cb => cb.value);
     
-    console.log('🔥 applyBlockedApps вызвана!', blockedApps.length);
-    
     try {
         showNotification('Синхронизация', `Блокировка ${blockedApps.length} приложений...`);
-        
-        // Сохраняем чёрный список в settings
         await db.ref('settings/blocked_apps').set(blockedApps);
         suspendedAppsList = blockedApps;
         
-        // Если тумблер включён — перезапускаем его для применения
         if (currentBlockingState) {
-            console.log('🔄 Тумблер включён, перезапускаем блокировку...');
             await db.ref('commands/blocking_enabled').set(false);
             await new Promise(resolve => setTimeout(resolve, 300));
             await db.ref('commands/blocking_enabled').set(true);
@@ -300,7 +283,6 @@ async function applyBlockedApps() {
         updateCheckboxesState();
         showNotification('Готово', `Заблокировано ${blockedApps.length} приложений`);
     } catch (error) {
-        console.error('Ошибка сохранения чёрного списка:', error);
         showNotification('Ошибка', 'Не удалось отправить конфигурацию');
     }
 }
@@ -317,7 +299,7 @@ async function requestStatsRefresh() {
 async function loadStats() {
     const tbody = document.getElementById('statsBody');
     if (!tbody) return;
-    tbody.innerHTML = '<tr><td colspan="2" style="text-align:center;">Загрузка статистики...<\/td><\/tr>';
+    tbody.innerHTML = '<tr><td colspan="2" style="text-align:center;">Загрузка статистики...</td></tr>';
     
     try {
         db.ref('device/usage_stats').on('value', (snapshot) => {
@@ -326,7 +308,7 @@ async function loadStats() {
             
             const entries = Object.entries(stats);
             if (entries.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="2" style="text-align:center;">Экранное время за сегодня отсутствует<\/td><\/tr>';
+                tbody.innerHTML = '<tr><td colspan="2" style="text-align:center;">Экранное время за сегодня отсутствует</td></tr>';
                 return;
             }
             
@@ -334,14 +316,13 @@ async function loadStats() {
             
             tbody.innerHTML = entries.map(([_, appObject]) => `
                 <tr>
-                    <td style="font-weight:500;">📊 ${escapeHtml(appObject.name)}<\/td>
-                    <td style="font-weight:bold; color:#007bff; text-align:right;">${appObject.timeInMinutes} мин.<\/td>
-                <\/tr>
+                    <td style="font-weight:500;">📊 ${escapeHtml(appObject.name)}</td>
+                    <td style="font-weight:bold; color:#007bff; text-align:right;">${appObject.timeInMinutes} мин.</td>
+                </tr>
             `).join('');
         });
     } catch (error) {
-        console.error('Ошибка загрузки статистики:', error);
-        tbody.innerHTML = '<tr><td colspan="2" style="text-align:center; color:red;">Ошибка загрузки данных<\/td><\/tr>';
+        tbody.innerHTML = '<tr><td colspan="2" style="text-align:center; color:red;">Ошибка загрузки данных</td></tr>';
     }
 }
 
@@ -355,15 +336,11 @@ async function sync() {
         await db.ref('commands/request_stats').set(true);
         await db.ref('commands/request_apps').set(true);
         await db.ref('commands/request_location').set(true);
-        
         await new Promise(resolve => setTimeout(resolve, 2500));
         await loadDeviceStatus();
-        // Не перезагружаем приложения, чтобы не сбросить чекбоксы
-        
         if (syncStatus) syncStatus.textContent = '✅ Готово';
         setTimeout(() => { if (syncStatus) syncStatus.textContent = 'Готово'; }, 2000);
     } catch (error) {
-        console.error('Ошибка глобальной синхронизации:', error);
         if (syncStatus) syncStatus.textContent = '❌ Ошибка';
     } finally { if (syncBtn) syncBtn.disabled = false; }
 }
@@ -373,15 +350,42 @@ async function requestLocation() {
         await db.ref('commands/request_location').set(true);
         showNotification('Запрос отправлен', 'Ожидайте точечное определение координат чипом GPS...');
     } catch (error) {
-        console.error('Ошибка отправки геолокации:', error);
         showNotification('Ошибка', 'Не удалось связаться с датчиком');
+    }
+}
+
+async function loadUnlockPassword() {
+    const snapshot = await db.ref('settings/unlock_password').get();
+    const password = snapshot.val() || '';
+    const input = document.getElementById('unlockPasswordInput');
+    if (input) input.value = password;
+}
+
+async function saveUnlockPassword() {
+    const input = document.getElementById('unlockPasswordInput');
+    const statusDiv = document.getElementById('unlockPasswordStatus');
+    const password = input.value.trim();
+    
+    if (!password) {
+        showNotification('Ошибка', 'Пароль не может быть пустым');
+        return;
+    }
+    
+    try {
+        await db.ref('settings/unlock_password').set(password);
+        showNotification('Успех', 'Пароль разблокировки сохранен');
+        if (statusDiv) {
+            statusDiv.textContent = '✅ Пароль сохранен';
+            statusDiv.style.color = '#28a745';
+            setTimeout(() => { statusDiv.textContent = ''; }, 3000);
+        }
+    } catch (error) {
+        showNotification('Ошибка', 'Не удалось сохранить пароль');
     }
 }
 
 function setupRealtimeListeners() {
     db.ref('device/status').on('value', () => loadDeviceStatus());
-    
-    // Слушаем изменения в settings/blocked_apps (выбор родителя)
     db.ref('settings/blocked_apps').on('value', (snapshot) => {
         const newList = snapshot.val() || [];
         if (JSON.stringify(suspendedAppsList) !== JSON.stringify(newList)) {
@@ -390,7 +394,6 @@ function setupRealtimeListeners() {
             updateSelectAllButtonState();
         }
     });
-    
     db.ref('commands/blocking_enabled').on('value', (snap) => { 
         currentBlockingState = snap.val() === true; 
         updateToggleButton(); 
@@ -403,18 +406,28 @@ function setupButtons() {
     const loadAppsBtn = document.getElementById('loadAppsBtn');
     const selectAllBtn = document.getElementById('selectAllBtn');
     const requestLocationBtn = document.getElementById('requestLocationBtn');
+    const savePasswordBtn = document.getElementById('saveUnlockPasswordBtn');
 
     if (toggleBtn) toggleBtn.onclick = () => toggleBlocking();
     if (syncBtn) syncBtn.onclick = () => sync();
     if (loadAppsBtn) loadAppsBtn.onclick = () => loadApps();
     if (selectAllBtn) selectAllBtn.onclick = () => toggleSelectAll();
     if (requestLocationBtn) requestLocationBtn.onclick = () => requestLocation();
+    if (savePasswordBtn) savePasswordBtn.onclick = () => saveUnlockPassword();
 }
 
-// ========== АУТЕНТИФИКАЦИЯ ==========
-auth.onAuthStateChanged((user) => {
+auth.onAuthStateChanged(async (user) => {
     if (user) {
         currentUser = user;
+        
+        // Создаем запись родителя если ее нет
+        const snapshot = await db.ref('users/' + user.uid).get();
+        if (!snapshot.exists()) {
+            await db.ref('users/' + user.uid).set({
+                email: user.email,
+                role: 'parent'
+            });
+        }
         
         const authContainer = document.getElementById('authContainer');
         const appContainer = document.getElementById('appContainer');
@@ -436,7 +449,6 @@ auth.onAuthStateChanged((user) => {
     } else {
         const authContainer = document.getElementById('authContainer');
         const appContainer = document.getElementById('appContainer');
-        
         if (authContainer) authContainer.style.display = 'flex';
         if (appContainer) appContainer.style.display = 'none';
     }
@@ -485,11 +497,7 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 function logout() { 
-    auth.signOut().then(() => {
-        location.reload(); 
-    }).catch((error) => {
-        console.error("Ошибка при выходе:", error);
-    });
+    auth.signOut().then(() => { location.reload(); });
 }
 
 function addLogoutButton() {
@@ -498,7 +506,6 @@ function addLogoutButton() {
         const logoutBtn = document.createElement('button');
         logoutBtn.id = 'logoutBtn';
         logoutBtn.textContent = '🚪 Выйти';
-        
         logoutBtn.style.cssText = `
             position: absolute;
             top: 50%;
@@ -512,41 +519,10 @@ function addLogoutButton() {
             cursor: pointer;
             font-weight: 500;
             font-size: 12px;
-            transition: background 0.2s;
             z-index: 10;
-            white-space: nowrap;
         `;
-        
-        logoutBtn.onmouseover = () => { logoutBtn.style.background = 'rgba(255,255,255,0.3)'; };
-        logoutBtn.onmouseout = () => { logoutBtn.style.background = 'rgba(255,255,255,0.2)'; };
         logoutBtn.onclick = () => logout();
-        
         header.style.position = 'relative';
         header.appendChild(logoutBtn);
-        
-        const style = document.createElement('style');
-        style.textContent = `
-            @media (max-width: 660px) {
-                #logoutBtn {
-                    position: relative !important;
-                    top: auto !important;
-                    right: auto !important;
-                    transform: none !important;
-                    margin-top: 20px !important;
-                    margin-bottom: 10px !important;
-                    display: inline-block !important;
-                }
-                .header h1 {
-                    margin-right: 0 !important;
-                }
-                .header p {
-                    margin-right: 0 !important;
-                }
-                .header {
-                    text-align: center !important;
-                }
-            }
-        `;
-        document.head.appendChild(style);
     }
 }
