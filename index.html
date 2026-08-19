@@ -26,6 +26,8 @@
         .btn-danger { background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); }
         .btn-outline { background: transparent; border: 1px solid #667eea; color: #667eea; }
         .btn-sm { padding: 6px 12px; font-size: 12px; }
+        .btn-danger-sm { background: #dc3545; color: white; border: none; padding: 4px 10px; border-radius: 4px; cursor: pointer; font-size: 11px; }
+        .btn-danger-sm:hover { background: #c82333; }
         .status { padding: 8px 12px; border-radius: 8px; font-size: 14px; display: inline-flex; align-items: center; gap: 8px; }
         .status-online { background: #d4edda; color: #155724; }
         .status-offline { background: #f8d7da; color: #721c24; }
@@ -55,6 +57,86 @@
         .flex-between { display: flex; justify-content: space-between; align-items: center; }
         .mt-2 { margin-top: 10px; }
         .group-title { font-size: 14px; font-weight: 600; margin: 15px 0 10px 0; padding-bottom: 5px; border-bottom: 1px solid #dee2e6; }
+        
+        /* Стили для Windows устройств */
+        .windows-device {
+            background: #f8f9fa;
+            border-radius: 8px;
+            padding: 12px 15px;
+            margin-bottom: 10px;
+            border-left: 3px solid #667eea;
+        }
+        .windows-device .device-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+        .windows-device .device-name {
+            font-weight: 600;
+            color: #333;
+        }
+        .windows-device .device-name-input {
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            padding: 4px 8px;
+            font-size: 14px;
+            font-weight: 600;
+            color: #333;
+            background: white;
+            width: 200px;
+        }
+        .windows-device .device-name-input:focus {
+            border-color: #667eea;
+            outline: none;
+        }
+        .windows-device .device-toggle {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .windows-device .device-toggle .toggle-button {
+            width: 40px;
+            height: 22px;
+        }
+        .windows-device .device-toggle .toggle-button::after {
+            width: 18px;
+            height: 18px;
+        }
+        .windows-device .device-toggle .toggle-button.active::after {
+            left: 20px;
+        }
+        .windows-device .device-status-text {
+            font-size: 12px;
+            color: #666;
+        }
+        .windows-device .device-actions {
+            display: flex;
+            gap: 8px;
+        }
+        .windows-devices-container {
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        .no-devices {
+            text-align: center;
+            padding: 20px;
+            color: #999;
+        }
+        .add-device-btn {
+            width: 100%;
+            margin-top: 10px;
+            padding: 8px;
+            background: #28a745;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 13px;
+        }
+        .add-device-btn:hover {
+            background: #218838;
+        }
     </style>
 </head>
 <body>
@@ -79,8 +161,9 @@
 
     <div class="container">
         <div class="sidebar">
+            <!-- Блокировка Android -->
             <div class="card">
-                <h3>🔒 Управление блокировкой</h3>
+                <h3>🔒 Управление блокировкой (Android)</h3>
                 <div class="toggle-switch">
                     <span class="toggle-label">Блокировка устройства</span>
                     <div id="toggleBlocking" class="toggle-button"></div>
@@ -90,16 +173,28 @@
                     <span id="syncStatus" style="font-size: 12px; color: #666;">Готово</span>
                 </div>
             </div>
-            <div class="card">
-    <h3>🔐 Пароль разблокировки телефона</h3>
-    <input type="text" id="unlockPasswordInput" placeholder="Введите пароль" 
-           style="width: 100%; padding: 10px; margin-bottom: 10px; border-radius: 8px; border: 1px solid #ddd;">
-    <button id="saveUnlockPasswordBtn" class="btn btn-sm" style="width: 100%;">💾 Сохранить пароль</button>
-    <div id="unlockPasswordStatus" style="font-size: 12px; color: #666; margin-top: 8px;"></div>
-</div>
 
+            <!-- Пароль -->
             <div class="card">
-                <h3>📡 Статус устройства</h3>
+                <h3>🔐 Пароль разблокировки телефона</h3>
+                <input type="text" id="unlockPasswordInput" placeholder="Введите пароль" 
+                       style="width: 100%; padding: 10px; margin-bottom: 10px; border-radius: 8px; border: 1px solid #ddd;">
+                <button id="saveUnlockPasswordBtn" class="btn btn-sm" style="width: 100%;">💾 Сохранить пароль</button>
+                <div id="unlockPasswordStatus" style="font-size: 12px; color: #666; margin-top: 8px;"></div>
+            </div>
+
+            <!-- 📌 НОВЫЙ БЛОК: Windows Устройства -->
+            <div class="card">
+                <h3>💻 Windows Устройства</h3>
+                <div id="windowsDevicesContainer" class="windows-devices-container">
+                    <div class="no-devices">Загрузка устройств...</div>
+                </div>
+                <button id="addWindowsDeviceBtn" class="add-device-btn">➕ Добавить устройство</button>
+            </div>
+
+            <!-- Статус Android устройства -->
+            <div class="card">
+                <h3>📡 Статус устройства (Android)</h3>
                 <div id="deviceStatusCard" class="status status-offline" style="justify-content: center;">
                     <span class="status-badge offline"></span>
                     <span id="deviceStatusText">Проверка...</span>
@@ -114,6 +209,7 @@
                 </div>
             </div>
 
+            <!-- Управление приложениями Android -->
             <div class="card">
                 <h3>📱 Управление приложениями</h3>
                 <button id="loadAppsBtn" class="btn btn-sm" style="width: auto; margin-bottom: 10px;">📥 Загрузить список приложений</button>
@@ -125,6 +221,7 @@
         </div>
 
         <div class="content">
+            <!-- Геолокация Android -->
             <div class="card">
                 <h3>📍 Геолокация</h3>
                 <div id="map"></div>
@@ -132,23 +229,21 @@
                 <button id="requestLocationBtn" class="btn btn-sm" style="margin-top: 10px; width: auto;">📍 Запросить местоположение</button>
             </div>
 
-             <!-- 🚀 ИСПРАВЛЕНО И СИНХРОНИЗИРОВАНО С APP.JS -->
+            <!-- Статистика Android -->
             <div class="card">
                 <h3>📊 Статистика использования за сегодня</h3>
                 <div class="flex-between mb-2">
                     <span style="font-size: 14px; opacity: 0.7;">Актуальное экранное время в минутах</span>
-                    <!-- Кнопка теперь вызывает метод requestStatsRefresh(), который экстренно будит суточный трекер на телефоне -->
                     <button onclick="requestStatsRefresh()" class="btn btn-sm btn-outline">🔄 Запросить обновление</button>
                 </div>
                 <div id="statsContainer">
                     <table class="stats-table" style="width:100%; border-collapse:collapse;">
                         <thead>
-                            <tr style="text-align:left; border-bottom:1px solid rgba(255,255,255,0.1);">
+                            <tr>
                                 <th style="padding:8px;">Приложение</th>
                                 <th style="padding:8px; text-align:right;">Время работы</th>
                             </tr>
                         </thead>
-                        <!-- ID statsBody на месте, app.js будет отрисовывать строки сюда -->
                         <tbody id="statsBody">
                             <tr>
                                 <td colspan="2" style="text-align:center; padding:15px; opacity:0.5;">
