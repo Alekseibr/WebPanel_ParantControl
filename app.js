@@ -21,7 +21,9 @@ let currentUser = null;
 let currentBlockingState = false;
 let suspendedAppsList = [];
 let notificationTimeout = null;
+let windowsDevices = {};
 
+// ---------- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ----------
 function escapeHtml(text) {
     if (!text) return '';
     const div = document.createElement('div');
@@ -49,6 +51,120 @@ function showNotification(title, body) {
     }, 5000);
 }
 
+// ---------- WINDOWS УСТРОЙСТВА ----------
+function loadWindowsDevices() {
+    db.ref('windows/devices').on('value', (snapshot) => {
+        const devices = snapshot.val() || {};
+        windowsDevices = devices;
+        renderWindowsDevices(devices);
+    });
+}
+
+function renderWindowsDevices(devices) {
+    const container = document.getElementById('windowsDevicesContainer');
+    if (!container) return;
+
+    const deviceIds = Object.keys(devices);
+    if (deviceIds.length === 0) {
+        container.innerHTML = '<div class="no-devices">Нет Windows устройств</div>';
+        return;
+    }
+
+    let html = '';
+    for (const [deviceId, data] of Object.entries(devices)) {
+        const isBlocked = data.blocking_enabled === true;
+        const deviceName = data.name || deviceId;
+
+        html += `
+            <div class="windows-device" data-device-id="${escapeHtml(deviceId)}">
+                <div class="device-header">
+                    <div class="device-name">
+                        <input type="text" class="device-name-input" value="${escapeHtml(deviceName)}" 
+                               data-device-id="${escapeHtml(deviceId)}" 
+                               onchange="updateDeviceName('${escapeHtml(deviceId)}', this.value)">
+                    </div>
+                    <div class="device-actions">
+                        <button class="btn-danger-sm" onclick="deleteDevice('${escapeHtml(deviceId)}')">🗑️ Удалить</button>
+                    </div>
+                </div>
+                <div class="device-toggle">
+                    <span style="font-size:14px;">Блокировка</span>
+                    <div class="toggle-button ${isBlocked ? 'active' : ''}" 
+                         onclick="toggleWindowsDevice('${escapeHtml(deviceId)}', ${!isBlocked})"
+                         id="windows-toggle-${escapeHtml(deviceId)}">
+                    </div>
+                    <span class="device-status-text">${isBlocked ? '🔒 Заблокировано' : '🔓 Разблокировано'}</span>
+                </div>
+                <div style="font-size:11px; color:#999; margin-top:4px;">
+                    ID: ${escapeHtml(deviceId)}
+                </div>
+            </div>
+        `;
+    }
+
+    container.innerHTML = html;
+}
+
+async function toggleWindowsDevice(deviceId, newState) {
+    try {
+        await db.ref(`windows/devices/${deviceId}/blocking_enabled`).set(newState);
+        showNotification('Windows', `Устройство ${newState ? 'заблокировано' : 'разблокировано'}`);
+    } catch (error) {
+        showNotification('Ошибка', 'Не удалось изменить состояние');
+        console.error(error);
+    }
+}
+
+async function updateDeviceName(deviceId, newName) {
+    if (!newName || newName.trim() === '') {
+        showNotification('Ошибка', 'Имя не может быть пустым');
+        // Восстанавливаем старое имя
+        renderWindowsDevices(windowsDevices);
+        return;
+    }
+    try {
+        await db.ref(`windows/devices/${deviceId}/name`).set(newName.trim());
+        showNotification('Успех', 'Имя устройства обновлено');
+    } catch (error) {
+        showNotification('Ошибка', 'Не удалось обновить имя');
+        console.error(error);
+    }
+}
+
+async function deleteDevice(deviceId) {
+    if (!confirm(`Удалить устройство "${deviceId}"?`)) return;
+    try {
+        await db.ref(`windows/devices/${deviceId}`).remove();
+        showNotification('Успех', 'Устройство удалено');
+    } catch (error) {
+        showNotification('Ошибка', 'Не удалось удалить устройство');
+        console.error(error);
+    }
+}
+
+async function addWindowsDevice() {
+    const deviceId = prompt('Введите имя устройства (например, DESKTOP-ABC123 или LAPTOP-XYZ789):');
+    if (!deviceId || deviceId.trim() === '') return;
+    
+    const trimmedId = deviceId.trim();
+    
+    // Проверяем, существует ли уже такое устройство
+    if (windowsDevices[trimmedId]) {
+        showNotification('Ошибка', 'Устройство с таким именем уже существует');
+        return;
+    }
+    
+    try {
+        await db.ref(`windows/devices/${trimmedId}/blocking_enabled`).set(false);
+        await db.ref(`windows/devices/${trimmedId}/name`).set(trimmedId);
+        showNotification('Успех', `Устройство "${trimmedId}" добавлено`);
+    } catch (error) {
+        showNotification('Ошибка', 'Не удалось добавить устройство');
+        console.error(error);
+    }
+}
+
+// ---------- ОСТАЛЬНЫЕ ФУНКЦИИ (Android) ----------
 function initApp() {
     initMap();
     loadBlockingState();
@@ -58,6 +174,7 @@ function initApp() {
     loadInitialBlockedList();
     loadStats();
     loadUnlockPassword();
+    loadWindowsDevices();
     setupRealtimeListeners();
     setupButtons();
 }
@@ -407,6 +524,7 @@ function setupButtons() {
     const selectAllBtn = document.getElementById('selectAllBtn');
     const requestLocationBtn = document.getElementById('requestLocationBtn');
     const savePasswordBtn = document.getElementById('saveUnlockPasswordBtn');
+    const addDeviceBtn = document.getElementById('addWindowsDeviceBtn');
 
     if (toggleBtn) toggleBtn.onclick = () => toggleBlocking();
     if (syncBtn) syncBtn.onclick = () => sync();
@@ -414,13 +532,14 @@ function setupButtons() {
     if (selectAllBtn) selectAllBtn.onclick = () => toggleSelectAll();
     if (requestLocationBtn) requestLocationBtn.onclick = () => requestLocation();
     if (savePasswordBtn) savePasswordBtn.onclick = () => saveUnlockPassword();
+    if (addDeviceBtn) addDeviceBtn.onclick = () => addWindowsDevice();
 }
 
+// ---------- АУТЕНТИФИКАЦИЯ ----------
 auth.onAuthStateChanged(async (user) => {
     if (user) {
         currentUser = user;
         
-        // Создаем запись родителя если ее нет
         const snapshot = await db.ref('users/' + user.uid).get();
         if (!snapshot.exists()) {
             await db.ref('users/' + user.uid).set({
