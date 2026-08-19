@@ -23,7 +23,6 @@
         .toggle-button.active::after { left: 26px; }
         .btn { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; padding: 10px 20px; border-radius: 8px; cursor: pointer; font-size: 14px; font-weight: 500; transition: transform 0.2s; }
         .btn:hover { transform: translateY(-1px); opacity: 0.9; }
-        .btn-danger { background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); }
         .btn-outline { background: transparent; border: 1px solid #667eea; color: #667eea; }
         .btn-sm { padding: 6px 12px; font-size: 12px; }
         .btn-danger-sm { background: #dc3545; color: white; border: none; padding: 4px 10px; border-radius: 4px; cursor: pointer; font-size: 11px; }
@@ -72,10 +71,6 @@
             align-items: center;
             margin-bottom: 8px;
         }
-        .windows-device .device-name {
-            font-weight: 600;
-            color: #333;
-        }
         .windows-device .device-name-input {
             border: 1px solid #ddd;
             border-radius: 4px;
@@ -84,7 +79,7 @@
             font-weight: 600;
             color: #333;
             background: white;
-            width: 200px;
+            width: 180px;
         }
         .windows-device .device-name-input:focus {
             border-color: #667eea;
@@ -110,32 +105,14 @@
             font-size: 12px;
             color: #666;
         }
-        .windows-device .device-actions {
-            display: flex;
-            gap: 8px;
-        }
-        .windows-devices-container {
-            max-height: 400px;
-            overflow-y: auto;
-        }
         .no-devices {
             text-align: center;
             padding: 20px;
             color: #999;
         }
-        .add-device-btn {
-            width: 100%;
-            margin-top: 10px;
-            padding: 8px;
-            background: #28a745;
-            color: white;
-            border: none;
-            border-radius: 6px;
-            cursor: pointer;
-            font-size: 13px;
-        }
-        .add-device-btn:hover {
-            background: #218838;
+        .windows-devices-container {
+            max-height: 400px;
+            overflow-y: auto;
         }
     </style>
 </head>
@@ -161,9 +138,8 @@
 
     <div class="container">
         <div class="sidebar">
-            <!-- Блокировка Android -->
             <div class="card">
-                <h3>🔒 Управление блокировкой (Android)</h3>
+                <h3>🔒 Управление блокировкой</h3>
                 <div class="toggle-switch">
                     <span class="toggle-label">Блокировка устройства</span>
                     <div id="toggleBlocking" class="toggle-button"></div>
@@ -174,7 +150,6 @@
                 </div>
             </div>
 
-            <!-- Пароль -->
             <div class="card">
                 <h3>🔐 Пароль разблокировки телефона</h3>
                 <input type="text" id="unlockPasswordInput" placeholder="Введите пароль" 
@@ -183,18 +158,8 @@
                 <div id="unlockPasswordStatus" style="font-size: 12px; color: #666; margin-top: 8px;"></div>
             </div>
 
-            <!-- 📌 НОВЫЙ БЛОК: Windows Устройства -->
             <div class="card">
-                <h3>💻 Windows Устройства</h3>
-                <div id="windowsDevicesContainer" class="windows-devices-container">
-                    <div class="no-devices">Загрузка устройств...</div>
-                </div>
-                <button id="addWindowsDeviceBtn" class="add-device-btn">➕ Добавить устройство</button>
-            </div>
-
-            <!-- Статус Android устройства -->
-            <div class="card">
-                <h3>📡 Статус устройства (Android)</h3>
+                <h3>📡 Статус устройства</h3>
                 <div id="deviceStatusCard" class="status status-offline" style="justify-content: center;">
                     <span class="status-badge offline"></span>
                     <span id="deviceStatusText">Проверка...</span>
@@ -209,7 +174,6 @@
                 </div>
             </div>
 
-            <!-- Управление приложениями Android -->
             <div class="card">
                 <h3>📱 Управление приложениями</h3>
                 <button id="loadAppsBtn" class="btn btn-sm" style="width: auto; margin-bottom: 10px;">📥 Загрузить список приложений</button>
@@ -221,7 +185,6 @@
         </div>
 
         <div class="content">
-            <!-- Геолокация Android -->
             <div class="card">
                 <h3>📍 Геолокация</h3>
                 <div id="map"></div>
@@ -229,7 +192,6 @@
                 <button id="requestLocationBtn" class="btn btn-sm" style="margin-top: 10px; width: auto;">📍 Запросить местоположение</button>
             </div>
 
-            <!-- Статистика Android -->
             <div class="card">
                 <h3>📊 Статистика использования за сегодня</h3>
                 <div class="flex-between mb-2">
@@ -253,6 +215,15 @@
                         </tbody>
                     </table>
                 </div>
+            </div>
+
+            <!-- Windows Устройства -->
+            <div class="card">
+                <h3>💻 Windows Устройства</h3>
+                <div id="windowsDevicesContainer" class="windows-devices-container">
+                    <div class="no-devices">Нет Windows устройств</div>
+                </div>
+                <button id="addWindowsDeviceBtn" class="btn btn-sm" style="width:100%; margin-top:10px; background:#28a745; color:white;">➕ Добавить устройство</button>
             </div>
         </div>
     </div>
