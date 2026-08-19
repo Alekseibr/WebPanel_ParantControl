@@ -78,14 +78,10 @@ function renderWindowsDevices(devices) {
         html += `
             <div class="windows-device" data-device-id="${escapeHtml(deviceId)}">
                 <div class="device-header">
-                    <div class="device-name">
-                        <input type="text" class="device-name-input" value="${escapeHtml(deviceName)}" 
-                               data-device-id="${escapeHtml(deviceId)}" 
-                               onchange="updateDeviceName('${escapeHtml(deviceId)}', this.value)">
-                    </div>
-                    <div class="device-actions">
-                        <button class="btn-danger-sm" onclick="deleteDevice('${escapeHtml(deviceId)}')">🗑️ Удалить</button>
-                    </div>
+                    <input type="text" class="device-name-input" value="${escapeHtml(deviceName)}" 
+                           data-device-id="${escapeHtml(deviceId)}" 
+                           onchange="updateDeviceName('${escapeHtml(deviceId)}', this.value)">
+                    <button class="btn-danger-sm" onclick="deleteDevice('${escapeHtml(deviceId)}')">🗑️</button>
                 </div>
                 <div class="device-toggle">
                     <span style="font-size:14px;">Блокировка</span>
@@ -95,7 +91,7 @@ function renderWindowsDevices(devices) {
                     </div>
                     <span class="device-status-text">${isBlocked ? '🔒 Заблокировано' : '🔓 Разблокировано'}</span>
                 </div>
-                <div style="font-size:11px; color:#999; margin-top:4px;">
+                <div style="font-size:10px; color:#999; margin-top:4px;">
                     ID: ${escapeHtml(deviceId)}
                 </div>
             </div>
@@ -111,14 +107,12 @@ async function toggleWindowsDevice(deviceId, newState) {
         showNotification('Windows', `Устройство ${newState ? 'заблокировано' : 'разблокировано'}`);
     } catch (error) {
         showNotification('Ошибка', 'Не удалось изменить состояние');
-        console.error(error);
     }
 }
 
 async function updateDeviceName(deviceId, newName) {
     if (!newName || newName.trim() === '') {
         showNotification('Ошибка', 'Имя не может быть пустым');
-        // Восстанавливаем старое имя
         renderWindowsDevices(windowsDevices);
         return;
     }
@@ -127,7 +121,6 @@ async function updateDeviceName(deviceId, newName) {
         showNotification('Успех', 'Имя устройства обновлено');
     } catch (error) {
         showNotification('Ошибка', 'Не удалось обновить имя');
-        console.error(error);
     }
 }
 
@@ -138,33 +131,27 @@ async function deleteDevice(deviceId) {
         showNotification('Успех', 'Устройство удалено');
     } catch (error) {
         showNotification('Ошибка', 'Не удалось удалить устройство');
-        console.error(error);
     }
 }
 
 async function addWindowsDevice() {
-    const deviceId = prompt('Введите имя устройства (например, DESKTOP-ABC123 или LAPTOP-XYZ789):');
+    const deviceId = prompt('Введите имя устройства (например, DESKTOP-ABC123):');
     if (!deviceId || deviceId.trim() === '') return;
-    
     const trimmedId = deviceId.trim();
-    
-    // Проверяем, существует ли уже такое устройство
     if (windowsDevices[trimmedId]) {
-        showNotification('Ошибка', 'Устройство с таким именем уже существует');
+        showNotification('Ошибка', 'Устройство уже существует');
         return;
     }
-    
     try {
         await db.ref(`windows/devices/${trimmedId}/blocking_enabled`).set(false);
         await db.ref(`windows/devices/${trimmedId}/name`).set(trimmedId);
         showNotification('Успех', `Устройство "${trimmedId}" добавлено`);
     } catch (error) {
         showNotification('Ошибка', 'Не удалось добавить устройство');
-        console.error(error);
     }
 }
 
-// ---------- ОСТАЛЬНЫЕ ФУНКЦИИ (Android) ----------
+// ---------- ОСНОВНЫЕ ФУНКЦИИ (Android) ----------
 function initApp() {
     initMap();
     loadBlockingState();
